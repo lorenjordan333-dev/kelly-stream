@@ -124,7 +124,7 @@ Only if the customer asks how long:
     }
 
     if (data.event === "media") {
-      if (isGreetingPhase) return;
+      
 
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
