@@ -106,7 +106,10 @@ Only if the customer asks how long:
       })
     );
   });
-
+setTimeout(() => {
+  openaiReady = true;
+  trySendGreeting();
+}, 500);
   ws.on("message", (message) => {
     let data;
 
