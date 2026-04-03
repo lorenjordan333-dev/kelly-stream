@@ -12,7 +12,7 @@ wss.on("connection", (ws) => {
   let streamSid = null;
   let openaiReady = false;
   let greetingSent = false;
-
+let isGreetingPhase = true;
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
@@ -22,7 +22,10 @@ wss.on("connection", (ws) => {
       },
     }
   );
-
+turn_detection: {
+  type: "server_vad",
+  silence_duration_ms: 800
+},
   function trySendGreeting() {
     if (!openaiReady || !streamSid || greetingSent) return;
 
@@ -134,6 +137,7 @@ Only if the customer asks how long:
     }
 
     if (data.event === "media") {
+      if (isGreetingPhase) return;
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
           JSON.stringify({
