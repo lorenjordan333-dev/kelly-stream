@@ -7,66 +7,62 @@ const wss = new WebSocket.Server({ server });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 wss.on("connection", (ws) => {
-  console.log("📞 Twilio connected");
+  console.log("Twilio connected");
 
   let streamSid = null;
   let openaiReady = false;
   let greetingSent = false;
-let isGreetingPhase = true;
+  let isGreetingPhase = true;
+
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: "Bearer " + OPENAI_API_KEY,
         "OpenAI-Beta": "realtime=v1",
       },
     }
   );
 
   function trySendGreeting() {
-    if (!openaiReady || !streamSid || greetingSent) {
-  return;
-}
+    if (!openaiReady || !streamSid || greetingSent) return;
 
     greetingSent = true;
+    console.log("Sending greeting");
 
     openaiWs.send(
       JSON.stringify({
         type: "response.create",
         response: {
           modalities: ["audio"],
-          instructions:
-            "Say exactly: Locksmith services, hi, this is Kelly, how can I help?",
+          instructions: "Say exactly: Locksmith services, hi, this is Kelly, how can I help?",
         },
       })
     );
-   setTimeout(() => {
-  isGreetingPhase = false;
-}, 2000); 
+
+    setTimeout(() => {
+      isGreetingPhase = false;
+      console.log("Greeting phase done, now listening");
+    }, 5000);
   }
 
   openaiWs.on("open", () => {
-    console.log("🤖 OpenAI connected");
+    console.log("OpenAI connected");
 
     openaiWs.send(
       JSON.stringify({
         type: "session.update",
         session: {
-        turn_detection: {
-  type: "server_vad",
-  silence_duration_ms: 800
-},
-          instructions: `
-You are Kelly, a professional locksmith dispatcher.
+          instructions: `You are Kelly, a professional locksmith dispatcher.
 
 GREETING:
 You always begin the call first by saying exactly:
 "Locksmith services, hi, this is Kelly, how can I help?"
 
 After that, wait for the customer to speak.
-
 Do not interrupt the customer.
-Always let the customer finish speaking before responding.
+Always let the customer finish speaking completely before responding.
+Never jump in while the customer is still talking.
 
 Your job is to:
 1. Identify the job (lockout or lock change)
@@ -78,24 +74,14 @@ Once you have the full address:
 Say the technician will be on the way and will call shortly.
 
 LANGUAGE:
-
 Speak in the same language as the customer.
 If the customer speaks French, respond in French.
 If the customer speaks English, respond in English.
 
----
-
 PRICING:
-
 If the customer asks for the price:
-
-First response:
-"The technician will let you know on site depending on the lock. He will explain everything before starting anything."
-
-If the customer insists:
-"The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
-
-
+First response: "The technician will let you know on site depending on the lock. He will explain everything before starting anything."
+If the customer insists: "The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
 
 STYLE:
 - Calm
@@ -104,24 +90,23 @@ STYLE:
 - Short sentences
 - Friendly but in control
 
-
-
 ETA:
 Only if the customer asks how long:
-"About 20 to 25 minutes."
-
-
-`,
-          turn_detection: { type: "server_vad" },
+"About 20 to 25 minutes."`,
+          voice: "alloy",
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
-          voice: "alloy",
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.6,
+            prefix_padding_ms: 500,
+            silence_duration_ms: 1500,
+          },
         },
       })
     );
   });
 
-  // 👉 FROM TWILIO → OPENAI
   ws.on("message", (message) => {
     let data;
 
@@ -133,13 +118,14 @@ Only if the customer asks how long:
 
     if (data.event === "start") {
       streamSid = data.start.streamSid;
-      console.log("▶️ Stream started:", streamSid);
+      console.log("Stream started:", streamSid);
       trySendGreeting();
       return;
     }
 
     if (data.event === "media") {
       if (isGreetingPhase) return;
+
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
           JSON.stringify({
@@ -151,7 +137,6 @@ Only if the customer asks how long:
     }
   });
 
-  // 👉 FROM OPENAI → TWILIO
   openaiWs.on("message", (message) => {
     let data;
 
@@ -162,7 +147,7 @@ Only if the customer asks how long:
     }
 
     if (data.type === "session.created") {
-      console.log("✅ session ready");
+      console.log("Session ready");
       openaiReady = true;
       trySendGreeting();
       return;
@@ -173,21 +158,19 @@ Only if the customer asks how long:
         JSON.stringify({
           event: "media",
           streamSid: streamSid,
-          media: {
-            payload: data.delta,
-          },
+          media: { payload: data.delta },
         })
       );
     }
   });
 
   ws.on("close", () => {
-    console.log("❌ Twilio disconnected");
+    console.log("Twilio disconnected");
     openaiWs.close();
   });
 
   openaiWs.on("close", () => {
-    console.log("❌ OpenAI disconnected");
+    console.log("OpenAI disconnected");
   });
 
   openaiWs.on("error", (err) => {
