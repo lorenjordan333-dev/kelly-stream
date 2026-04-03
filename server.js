@@ -47,6 +47,10 @@ wss.on("connection", (ws) => {
       JSON.stringify({
         type: "session.update",
         session: {
+          turn_detection: {
+  type: "server_vad",
+  silence_duration_ms: 800
+},
           instructions: `
 You are Kelly, a professional locksmith dispatcher.
 
