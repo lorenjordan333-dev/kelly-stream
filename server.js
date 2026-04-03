@@ -41,6 +41,9 @@ turn_detection: {
         },
       })
     );
+   setTimeout(() => {
+  isGreetingPhase = false;
+}, 2000); 
   }
 
   openaiWs.on("open", () => {
@@ -50,7 +53,7 @@ turn_detection: {
       JSON.stringify({
         type: "session.update",
         session: {
-          turn_detection: {
+        turn_detection: {
   type: "server_vad",
   silence_duration_ms: 800
 },
