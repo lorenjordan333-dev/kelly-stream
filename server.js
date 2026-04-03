@@ -22,12 +22,11 @@ let isGreetingPhase = true;
       },
     }
   );
-turn_detection: {
-  type: "server_vad",
-  silence_duration_ms: 800
-},
+
   function trySendGreeting() {
-    if (!openaiReady || !streamSid || greetingSent) return;
+    if (!openaiReady || !streamSid || greetingSent) {
+  return;
+}
 
     greetingSent = true;
 
