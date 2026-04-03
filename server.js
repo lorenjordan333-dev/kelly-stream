@@ -43,7 +43,7 @@ wss.on("connection", (ws) => {
     setTimeout(() => {
       isGreetingPhase = false;
       console.log("Greeting phase done, now listening");
-    }, 5000);
+    }, 2000);
   }
 
   openaiWs.on("open", () => {
