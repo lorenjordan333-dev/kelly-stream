@@ -26,7 +26,6 @@ const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 
 async function sendToElevenLabs(text, ws, streamSid) {
   console.log("Sending to Eleven Labs:", text);
-  console.log("Eleven API Key exists:", ELEVEN_API_KEY ? "yes" : "NO");
 
   const voiceId = "EXAVITQu4vr4xnSDxMaL";
 
@@ -39,24 +38,23 @@ async function sendToElevenLabs(text, ws, streamSid) {
       },
       body: JSON.stringify({
         text: text,
-        model_id: "eleven_multilingual_v2"
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.8,
+          style: 0.6,
+          use_speaker_boost: true
+        }
       })
     });
 
-    console.log("Eleven Labs response status:", response.status);
-
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Eleven Labs error:", response.status, errorText);
+      console.error("Eleven Labs error:", response.status);
       return;
     }
 
     const audioBuffer = await response.arrayBuffer();
-    console.log("Audio received from Eleven Labs, size:", audioBuffer.byteLength);
-
     const base64Audio = Buffer.from(audioBuffer).toString("base64");
-
-    console.log("Sending audio to Twilio");
 
     ws.send(JSON.stringify({
       event: "media",
@@ -64,7 +62,7 @@ async function sendToElevenLabs(text, ws, streamSid) {
       media: { payload: base64Audio }
     }));
   } catch (err) {
-    console.error("Eleven Labs fetch error:", err.message);
+    console.error("Eleven Labs error:", err.message);
   }
 }
 
