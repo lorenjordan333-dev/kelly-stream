@@ -22,12 +22,14 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/stream" });
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 
 wss.on("connection", (ws) => {
   console.log("Twilio connected");
 
   let streamSid = null;
   let greetingSent = false;
+  let textBuffer = "";
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -46,8 +48,7 @@ wss.on("connection", (ws) => {
       JSON.stringify({
         type: "session.update",
         session: {
-          instructions: 
-             `You are Kelly, a professional locksmith dispatcher.
+          instructions: `You are Kelly, a professional locksmith dispatcher.
 
 GREETING:
 You always begin the call first by saying exactly:
@@ -101,9 +102,8 @@ STYLE:
 ETA:
 Only if the customer asks how long, say:
 "About 20 to 25 minutes."`,
-          voice: "alloy",
+          modalities: ["text"], // 🔥 changed here
           input_audio_format: "g711_ulaw",
-          output_audio_format: "g711_ulaw",
           turn_detection: {
             type: "server_vad",
             threshold: 0.6,
@@ -144,7 +144,7 @@ Only if the customer asks how long, say:
     }
   });
 
-  openaiWs.on("message", (message) => {
+  openaiWs.on("message", async (message) => {
     let data;
 
     try {
@@ -153,14 +153,20 @@ Only if the customer asks how long, say:
       return;
     }
 
-    if (data.type === "response.audio.delta" && data.delta && streamSid) {
-      ws.send(
-        JSON.stringify({
-          event: "media",
-          streamSid: streamSid,
-          media: { payload: data.delta },
-        })
-      );
+    // accumulate text
+    if (data.type === "response.text.delta") {
+      textBuffer += data.delta;
+      return;
+    }
+
+    // when done → send to ElevenLabs
+    if (data.type === "response.text.done") {
+      const text = textBuffer.trim();
+      textBuffer = "";
+
+      if (text && streamSid) {
+        await sendToElevenLabs(text, ws, streamSid);
+      }
     }
   });
 
@@ -177,6 +183,31 @@ Only if the customer asks how long, say:
     console.error("OpenAI error:", err.message);
   });
 });
+
+async function sendToElevenLabs(text, ws, streamSid) {
+  const voiceId = "EXAVITQu4vr4xnSDxMaL";
+
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`, {
+    method: "POST",
+    headers: {
+      "xi-api-key": ELEVEN_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      text: text,
+      model_id: "eleven_multilingual_v2"
+    })
+  });
+
+  const audioBuffer = await response.arrayBuffer();
+  const base64Audio = Buffer.from(audioBuffer).toString("base64");
+
+  ws.send(JSON.stringify({
+    event: "media",
+    streamSid: streamSid,
+    media: { payload: base64Audio }
+  }));
+}
 
 const PORT = process.env.PORT || 8080;
 
