@@ -40,6 +40,44 @@ wss.on("connection", (ws) => {
     }
   );
 
+  async function sendToElevenLabs(text, ws, streamSid) {
+    console.log("Sending to Eleven Labs:", text);
+
+    const voiceId = "EXAVITQu4vr4xnSDxMaL";
+
+    try {
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": ELEVEN_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_multilingual_v2"
+        })
+      });
+
+      if (!response.ok) {
+        console.error("Eleven Labs error:", response.status, response.statusText);
+        return;
+      }
+
+      const audioBuffer = await response.arrayBuffer();
+      const base64Audio = Buffer.from(audioBuffer).toString("base64");
+
+      console.log("Audio received, sending to Twilio");
+
+      ws.send(JSON.stringify({
+        event: "media",
+        streamSid: streamSid,
+        media: { payload: base64Audio }
+      }));
+    } catch (err) {
+      console.error("Eleven Labs fetch error:", err.message);
+    }
+  }
+
   openaiWs.on("open", () => {
     console.log("OpenAI connected");
 
@@ -65,11 +103,8 @@ Your job is to:
 2. Ask for the full address
 
 ADDRESS:
-Ask naturally:
-"Can you please give me the address so I can send a technician?"
-
+Ask naturally: "Can you please give me the address so I can send a technician?"
 You must have: street name, street number, city, and postal code.
-
 If any part is missing, ask only for what is missing.
 Do not continue without a complete address.
 
@@ -85,18 +120,15 @@ If the customer speaks English, respond in English.
 PRICING:
 If the customer asks for the price, first say:
 "The technician will let you know on site depending on the lock. He will explain everything before starting anything."
-
 If the customer insists, say:
 "The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
 
 STYLE:
-
 - Speak in a natural, human way
 - Sound alive and engaged, not robotic
 - Vary your wording and sentence structure
 - Do not repeat the same phrasing each time
 - Use a relaxed, conversational tone
-- Sound like you are comfortable and confident in what you’re saying
 
 ETA:
 Only if the customer asks how long, say:
@@ -139,15 +171,6 @@ Only if the customer asks how long, say:
             audio: data.media.payload,
           })
         );
-
-        // ✅ ONLY FIX ADDED
-        openaiWs.send(JSON.stringify({
-          type: "input_audio_buffer.commit"
-        }));
-
-        openaiWs.send(JSON.stringify({
-          type: "response.create"
-        }));
       }
     }
   });
@@ -161,12 +184,12 @@ Only if the customer asks how long, say:
       return;
     }
 
-    if (data.type === "response.output_text") {
-      const text = data.output?.[0]?.content?.[0]?.text;
+    if (data.type === "response.done" && data.response) {
+      const content = data.response.output?.[0]?.content?.[0];
 
-      if (text && streamSid) {
-        console.log("TEXT:", text);
-        await sendToElevenLabs(text, ws, streamSid);
+      if (content && content.type === "text" && content.text && streamSid) {
+        console.log("AI Response:", content.text);
+        await sendToElevenLabs(content.text, ws, streamSid);
       }
     }
   });
@@ -184,31 +207,6 @@ Only if the customer asks how long, say:
     console.error("OpenAI error:", err.message);
   });
 });
-
-async function sendToElevenLabs(text, ws, streamSid) {
-  const voiceId = "EXAVITQu4vr4xnSDxMaL";
-
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": ELEVEN_API_KEY,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      text: text,
-      model_id: "eleven_multilingual_v2"
-    })
-  });
-
-  const audioBuffer = await response.arrayBuffer();
-  const base64Audio = Buffer.from(audioBuffer).toString("base64");
-
-  ws.send(JSON.stringify({
-    event: "media",
-    streamSid: streamSid,
-    media: { payload: base64Audio }
-  }));
-}
 
 const PORT = process.env.PORT || 8080;
 
