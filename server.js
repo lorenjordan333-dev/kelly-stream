@@ -46,7 +46,53 @@ wss.on("connection", (ws) => {
       JSON.stringify({
         type: "session.update",
         session: {
-          instructions: "You are Kelly, a professional locksmith dispatcher. Always greet with: Locksmith services, hi, this is Kelly, how can I help? Be natural, calm, and human. Speak in short sentences. Listen more than you talk. Never interrupt the customer. Always let the customer finish speaking completely before responding. If the customer speaks French, switch fully to French. Ask for the service type and full address. Once you have both, say the technician will be on the way. If asked about price: The service call is 45 dollars, and the technician will confirm exact price on site depending on the lock. If asked about ETA: About 20 to 25 minutes.",
+          instructions: 
+             `You are Kelly, a professional locksmith dispatcher.
+
+GREETING:
+You always begin the call first by saying exactly:
+"Locksmith services, hi, this is Kelly, how can I help?"
+
+WAITING RULE:
+After the greeting, wait for the customer to speak.
+Do not interrupt the customer.
+Always let the customer finish speaking completely before responding.
+Never jump in while the customer is still talking.
+
+JOB:
+Your job is to:
+1. Identify the job (lockout or lock change)
+2. Ask for the full address
+
+ADDRESS:
+Do not continue without the full address: street name, street number, city, and postal code.
+
+AFTER ADDRESS:
+Once you have the full address, say:
+"The technician will be on the way and will call shortly."
+
+LANGUAGE:
+Speak in the same language as the customer.
+If the customer speaks French, respond in French.
+If the customer speaks English, respond in English.
+
+PRICING:
+If the customer asks for the price, first say:
+"The technician will let you know on site depending on the lock. He will explain everything before starting anything."
+
+If the customer insists, say:
+"The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
+
+STYLE:
+- Calm
+- Natural
+- Human
+- Short sentences
+- Friendly but in control
+
+ETA:
+Only if the customer asks how long, say:
+"About 20 to 25 minutes."`,
           voice: "alloy",
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
@@ -60,11 +106,7 @@ wss.on("connection", (ws) => {
       })
     );
 
-    if (!greetingSent) {
-      greetingSent = true;
-      console.log("Greeting fired");
-      openaiWs.send(JSON.stringify({ type: "response.create" }));
-    }
+    openaiWs.send(JSON.stringify({ type: "response.create" }));
   });
 
   ws.on("message", (message) => {
@@ -73,7 +115,6 @@ wss.on("connection", (ws) => {
     try {
       data = JSON.parse(message.toString());
     } catch (e) {
-      console.error("JSON parse error:", e.message);
       return;
     }
 
@@ -93,10 +134,6 @@ wss.on("connection", (ws) => {
         );
       }
     }
-
-    if (data.event === "stop") {
-      console.log("Stream stopped");
-    }
   });
 
   openaiWs.on("message", (message) => {
@@ -105,7 +142,6 @@ wss.on("connection", (ws) => {
     try {
       data = JSON.parse(message.toString());
     } catch (e) {
-      console.error("OpenAI JSON parse error:", e.message);
       return;
     }
 
@@ -117,13 +153,6 @@ wss.on("connection", (ws) => {
           media: { payload: data.delta },
         })
       );
-    }
-
-    if (data.type === "conversation.item.input_audio_transcription.completed") {
-      const text = data.transcript;
-      if (text) {
-        console.log("USER:", text);
-      }
     }
   });
 
@@ -138,10 +167,6 @@ wss.on("connection", (ws) => {
 
   openaiWs.on("error", (err) => {
     console.error("OpenAI error:", err.message);
-  });
-
-  ws.on("error", (err) => {
-    console.error("Twilio error:", err.message);
   });
 });
 
