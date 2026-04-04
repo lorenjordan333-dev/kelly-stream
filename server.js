@@ -101,7 +101,7 @@ STYLE:
 ETA:
 Only if the customer asks how long, say:
 "About 20 to 25 minutes."`,
-          voice: "alloy",
+          voice: "aria",
           input_audio_format: "g711_ulaw",
           output_audio_format: "g711_ulaw",
           turn_detection: {
