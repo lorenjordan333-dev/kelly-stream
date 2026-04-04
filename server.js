@@ -10,9 +10,7 @@ wss.on("connection", (ws) => {
   console.log("Twilio connected");
 
   let streamSid = null;
-  let openaiReady = false;
   let greetingSent = false;
-  let isGreetingPhase = true;
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -23,28 +21,6 @@ wss.on("connection", (ws) => {
       },
     }
   );
-
-  function trySendGreeting() {
-    if (!openaiReady || !streamSid || greetingSent) return;
-
-    greetingSent = true;
-    console.log("Sending greeting");
-
-    openaiWs.send(
-      JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["audio"],
-          instructions: "Say exactly: Locksmith services, hi, this is Kelly, how can I help?",
-        },
-      })
-    );
-
-    setTimeout(() => {
-      isGreetingPhase = false;
-      console.log("Greeting phase done, now listening");
-    }, 2000);
-  }
 
   openaiWs.on("open", () => {
     console.log("OpenAI connected");
@@ -105,11 +81,14 @@ Only if the customer asks how long:
         },
       })
     );
+
+    if (!greetingSent) {
+      greetingSent = true;
+      console.log("Greeting fired");
+      openaiWs.send(JSON.stringify({ type: "response.create" }));
+    }
   });
-setTimeout(() => {
-  openaiReady = true;
-  trySendGreeting();
-}, 500);
+
   ws.on("message", (message) => {
     let data;
 
@@ -122,13 +101,10 @@ setTimeout(() => {
     if (data.event === "start") {
       streamSid = data.start.streamSid;
       console.log("Stream started:", streamSid);
-      trySendGreeting();
       return;
     }
 
     if (data.event === "media") {
-      
-
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
           JSON.stringify({
@@ -146,13 +122,6 @@ setTimeout(() => {
     try {
       data = JSON.parse(message.toString());
     } catch (e) {
-      return;
-    }
-
-    if (data.type === "session.created") {
-      console.log("Session ready");
-      openaiReady = true;
-      trySendGreeting();
       return;
     }
 
@@ -184,5 +153,6 @@ setTimeout(() => {
 const PORT = process.env.PORT || 8080;
 
 server.listen(PORT, () => {
+  console.log("voice-stream running on port " => {
   console.log("voice-stream running on port " + PORT);
 });
