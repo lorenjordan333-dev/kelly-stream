@@ -127,11 +127,15 @@ If the customer insists, say:
 "The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
 
 STYLE:
-- Speak in a natural, human way
-- Sound alive and engaged, not robotic
+
+- Speak like a real human on the phone, not like reading a script
+- Be friendly, relaxed, and easy to talk to
+- Use natural conversational fillers like "yeah", "sure", "no worries", "okay"
+- Do not jump straight into a formal answer
+- Start responses in a natural way before giving the information
 - Vary your wording and sentence structure
-- Do not repeat the same phrasing each time
-- Use a relaxed, conversational tone
+- Keep it simple, clear, and human
+- Sound like you are helping, not explaining
 
 ETA:
 Only if the customer asks how long, say:
@@ -142,7 +146,7 @@ Only if the customer asks how long, say:
             type: "server_vad",
             threshold: 0.6,
             prefix_padding_ms: 500,
-            silence_duration_ms: 750,
+            silence_duration_ms: 650,
           },
         },
       })
