@@ -24,11 +24,54 @@ const wss = new WebSocket.Server({ server, path: "/stream" });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 
+async function sendToElevenLabs(text, ws, streamSid) {
+  console.log("Sending to Eleven Labs:", text);
+  console.log("Eleven API Key exists:", ELEVEN_API_KEY ? "yes" : "NO");
+
+  const voiceId = "EXAVITQu4vr4xnSDxMaL";
+
+  try {
+    const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=ulaw_8000", {
+      method: "POST",
+      headers: {
+        "xi-api-key": ELEVEN_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: "eleven_multilingual_v2"
+      })
+    });
+
+    console.log("Eleven Labs response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Eleven Labs error:", response.status, errorText);
+      return;
+    }
+
+    const audioBuffer = await response.arrayBuffer();
+    console.log("Audio received from Eleven Labs, size:", audioBuffer.byteLength);
+
+    const base64Audio = Buffer.from(audioBuffer).toString("base64");
+
+    console.log("Sending audio to Twilio");
+
+    ws.send(JSON.stringify({
+      event: "media",
+      streamSid: streamSid,
+      media: { payload: base64Audio }
+    }));
+  } catch (err) {
+    console.error("Eleven Labs fetch error:", err.message);
+  }
+}
+
 wss.on("connection", (ws) => {
   console.log("Twilio connected");
 
   let streamSid = null;
-  let greetingSent = false;
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -39,44 +82,6 @@ wss.on("connection", (ws) => {
       },
     }
   );
-
-  async function sendToElevenLabs(text, ws, streamSid) {
-    console.log("Sending to Eleven Labs:", text);
-
-    const voiceId = "EXAVITQu4vr4xnSDxMaL";
-
-    try {
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=ulaw_8000`, {
-        method: "POST",
-        headers: {
-          "xi-api-key": ELEVEN_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          text: text,
-          model_id: "eleven_multilingual_v2"
-        })
-      });
-
-      if (!response.ok) {
-        console.error("Eleven Labs error:", response.status, response.statusText);
-        return;
-      }
-
-      const audioBuffer = await response.arrayBuffer();
-      const base64Audio = Buffer.from(audioBuffer).toString("base64");
-
-      console.log("Audio received, sending to Twilio");
-
-      ws.send(JSON.stringify({
-        event: "media",
-        streamSid: streamSid,
-        media: { payload: base64Audio }
-      }));
-    } catch (err) {
-      console.error("Eleven Labs fetch error:", err.message);
-    }
-  }
 
   openaiWs.on("open", () => {
     console.log("OpenAI connected");
