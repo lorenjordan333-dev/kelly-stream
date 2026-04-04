@@ -139,6 +139,15 @@ Only if the customer asks how long, say:
             audio: data.media.payload,
           })
         );
+
+        // ✅ ONLY FIX ADDED
+        openaiWs.send(JSON.stringify({
+          type: "input_audio_buffer.commit"
+        }));
+
+        openaiWs.send(JSON.stringify({
+          type: "response.create"
+        }));
       }
     }
   });
@@ -152,7 +161,6 @@ Only if the customer asks how long, say:
       return;
     }
 
-    // ✅ FIXED: correct event
     if (data.type === "response.output_text") {
       const text = data.output?.[0]?.content?.[0]?.text;
 
