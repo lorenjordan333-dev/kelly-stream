@@ -29,7 +29,6 @@ wss.on("connection", (ws) => {
 
   let streamSid = null;
   let greetingSent = false;
-  let textBuffer = "";
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -102,7 +101,7 @@ STYLE:
 ETA:
 Only if the customer asks how long, say:
 "About 20 to 25 minutes."`,
-          modalities: ["text"], // 🔥 changed here
+          modalities: ["text"],
           input_audio_format: "g711_ulaw",
           turn_detection: {
             type: "server_vad",
@@ -153,18 +152,12 @@ Only if the customer asks how long, say:
       return;
     }
 
-    // accumulate text
-    if (data.type === "response.text.delta") {
-      textBuffer += data.delta;
-      return;
-    }
-
-    // when done → send to ElevenLabs
-    if (data.type === "response.text.done") {
-      const text = textBuffer.trim();
-      textBuffer = "";
+    // ✅ FIXED: correct event
+    if (data.type === "response.output_text") {
+      const text = data.output?.[0]?.content?.[0]?.text;
 
       if (text && streamSid) {
+        console.log("TEXT:", text);
         await sendToElevenLabs(text, ws, streamSid);
       }
     }
