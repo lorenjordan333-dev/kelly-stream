@@ -106,7 +106,7 @@ Only if the customer asks how long, say:
             type: "server_vad",
             threshold: 0.6,
             prefix_padding_ms: 500,
-            silence_duration_ms: 1200,
+            silence_duration_ms: 950,
           },
         },
       })
