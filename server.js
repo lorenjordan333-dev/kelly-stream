@@ -30,7 +30,7 @@ const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 async function sendToElevenLabs(text, ws, streamSid) {
   console.log("Sending to Eleven Labs:", text);
 
-  const voiceId = "6YQMyaUWlj0VX652cY1C";
+  const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
   try {
     const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=ulaw_8000", {
