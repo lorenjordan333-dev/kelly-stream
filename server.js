@@ -3,6 +3,13 @@ const http = require("http");
 const express = require("express");
 
 const app = express();
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -82,7 +89,6 @@ Only if the customer asks how long, say:
 
 async function sendToElevenLabs(text, ws, streamSid, onDone) {
   console.log("Sending to Eleven Labs:", text);
-
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
   try {
@@ -132,7 +138,6 @@ async function sendToElevenLabs(text, ws, streamSid, onDone) {
 
 async function sendToElevenLabsWeb(text, ws, onDone) {
   console.log("WEB - Sending to Eleven Labs:", text);
-
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
   try {
