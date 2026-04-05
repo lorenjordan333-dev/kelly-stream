@@ -17,17 +17,19 @@ app.post("/voice", (req, res) => {
   res.set("Content-Type", "text/xml");
   res.status(200).send(twiml);
 });
+
 app.post("/voice-test", (req, res) => {
   console.log("voice-test hit");
   res.send("ok");
 });
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/stream" });
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ELEVEN_API_KEY = process.env.ELEVEN_API_KEY;
 
-async function sendToElevenLabs(text, ws, streamSid) {
+async function sendToElevenLabs(text, ws, streamSid, onDone) {
   console.log("Sending to Eleven Labs:", text);
 
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
@@ -53,6 +55,7 @@ async function sendToElevenLabs(text, ws, streamSid) {
 
     if (!response.ok) {
       console.error("Eleven Labs error:", response.status);
+      if (onDone) onDone();
       return;
     }
 
@@ -64,8 +67,15 @@ async function sendToElevenLabs(text, ws, streamSid) {
       streamSid: streamSid,
       media: { payload: base64Audio }
     }));
+
+    const durationMs = Math.max(1500, (text.split(" ").length / 3) * 1000);
+    setTimeout(() => {
+      if (onDone) onDone();
+    }, durationMs);
+
   } catch (err) {
     console.error("Eleven Labs error:", err.message);
+    if (onDone) onDone();
   }
 }
 
@@ -73,6 +83,7 @@ wss.on("connection", (ws) => {
   console.log("Twilio connected");
 
   let streamSid = null;
+  let kellySpeaking = false;
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -130,7 +141,6 @@ If the customer insists, say:
 "The service call is 45, and then it depends on the work. The technician will confirm everything with you before starting."
 
 STYLE:
-
 - Speak like a real human on the phone, not like reading a script
 - Be friendly, relaxed, and easy to talk to
 - Use natural conversational fillers like "yeah", "sure", "no worries", "okay"
@@ -174,6 +184,7 @@ Only if the customer asks how long, say:
     }
 
     if (data.event === "media") {
+      if (kellySpeaking) return;
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
           JSON.stringify({
@@ -199,7 +210,11 @@ Only if the customer asks how long, say:
 
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response:", content.text);
-        await sendToElevenLabs(content.text, ws, streamSid);
+        kellySpeaking = true;
+        await sendToElevenLabs(content.text, ws, streamSid, () => {
+          kellySpeaking = false;
+          console.log("Kelly done speaking, listening again");
+        });
       }
     }
   });
