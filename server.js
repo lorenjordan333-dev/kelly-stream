@@ -2,9 +2,7 @@ const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
 const OpenAI = require("openai");
-const multer = require("multer");
-const upload = multer({ dest: "uploads/" });
-const fs = require("fs");
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
@@ -15,7 +13,7 @@ app.get("/voice", (req, res) => {
   res.send("OK");
 });
 
-// ✅ TWILIO — FIXED (ONLY CHANGE: removed multer + duplicate route)
+// ✅ TWILIO ROUTE — UNTOUCHED LOGIC
 app.post("/voice", (req, res) => {
   console.log("VOICE HIT");
 
@@ -38,9 +36,6 @@ app.post("/voice-test", (req, res) => {
   res.send("ok");
 });
 
-// ❌ REMOVED SECOND /voice ROUTE (THIS WAS BREAKING TWILIO)
-// ❌ REMOVED BROKEN EXTRA CODE BLOCK (SYNTAX ERROR)
-
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/stream" });
 
@@ -53,23 +48,28 @@ async function sendToElevenLabs(text, ws, streamSid, onDone) {
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
   try {
-    const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=ulaw_8000", {
-      method: "POST",
-      headers: {
-        "xi-api-key": ELEVEN_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.8,
-          style: 0.6,
-          use_speaker_boost: true
-        }
-      })
-    });
+    const response = await fetch(
+      "https://api.elevenlabs.io/v1/text-to-speech/" +
+        voiceId +
+        "?output_format=ulaw_8000",
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": ELEVEN_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.4,
+            similarity_boost: 0.8,
+            style: 0.6,
+            use_speaker_boost: true,
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       console.error("Eleven Labs error:", response.status);
@@ -80,17 +80,22 @@ async function sendToElevenLabs(text, ws, streamSid, onDone) {
     const audioBuffer = await response.arrayBuffer();
     const base64Audio = Buffer.from(audioBuffer).toString("base64");
 
-    ws.send(JSON.stringify({
-      event: "media",
-      streamSid: streamSid,
-      media: { payload: base64Audio }
-    }));
+    ws.send(
+      JSON.stringify({
+        event: "media",
+        streamSid: streamSid,
+        media: { payload: base64Audio },
+      })
+    );
 
-    const durationMs = Math.max(1500, (text.split(" ").length / 3) * 1000);
+    const durationMs = Math.max(
+      1500,
+      (text.split(" ").length / 3) * 1000
+    );
+
     setTimeout(() => {
       if (onDone) onDone();
     }, durationMs);
-
   } catch (err) {
     console.error("Eleven Labs error:", err.message);
     if (onDone) onDone();
@@ -203,6 +208,7 @@ Only if the customer asks how long, say:
 
     if (data.event === "media") {
       if (kellySpeaking) return;
+
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(
           JSON.stringify({
@@ -226,13 +232,25 @@ Only if the customer asks how long, say:
     if (data.type === "response.done" && data.response) {
       const content = data.response.output?.[0]?.content?.[0];
 
-      if (content && content.type === "text" && content.text && streamSid) {
+      if (
+        content &&
+        content.type === "text" &&
+        content.text &&
+        streamSid
+      ) {
         console.log("AI Response:", content.text);
+
         kellySpeaking = true;
-        await sendToElevenLabs(content.text, ws, streamSid, () => {
-          kellySpeaking = false;
-          console.log("Kelly done speaking, listening again");
-        });
+
+        await sendToElevenLabs(
+          content.text,
+          ws,
+          streamSid,
+          () => {
+            kellySpeaking = false;
+            console.log("Kelly done speaking, listening again");
+          }
+        );
       }
     }
   });
