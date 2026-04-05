@@ -2,6 +2,9 @@ const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
 const OpenAI = require("openai");
+const multer = require("multer");
+const upload = multer({ dest: "uploads/" });
+const fs = require("fs");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
@@ -12,7 +15,7 @@ app.get("/voice", (req, res) => {
   res.send("OK");
 });
 
-app.post("/voice", (req, res) => {
+app.post("/voice", upload.single("file"), async (req, res) => {
   console.log("VOICE HIT");
   const host = req.headers["x-forwarded-host"] || req.headers.host || "voice-project-production-3574.up.railway.app";
   const twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="wss://' + host + '/stream" /></Connect></Response>';
@@ -24,20 +27,13 @@ app.post("/voice-test", (req, res) => {
   console.log("voice-test hit");
 
 
-
-let chunks = [];
-
-req.on("data", chunk => {
-  chunks.push(chunk);
-});
-
 req.on("end", async () => {
-  const buffer = Buffer.concat(chunks);
+  
 console.log("Received audio size:", buffer.length);
 
 try {
   const transcription = await openai.audio.transcriptions.create({
-    file: await OpenAI.toFile(buffer, "audio.webm"),
+    file: fs.createReadStream(req.file.path),
     model: "gpt-4o-transcribe"
   });
 
