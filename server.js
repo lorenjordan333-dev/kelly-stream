@@ -21,14 +21,17 @@ app.post("/voice", (req, res) => {
 app.post("/voice-test", (req, res) => {
   console.log("voice-test hit");
 
-let size = 0;
+
+
+let chunks = [];
 
 req.on("data", chunk => {
-  size += chunk.length;
+  chunks.push(chunk);
 });
 
 req.on("end", () => {
-  console.log("Received audio size:", size);
+  const buffer = Buffer.concat(chunks);
+console.log("Received audio size:", buffer.length);
   res.send("ok");
 });
 });
