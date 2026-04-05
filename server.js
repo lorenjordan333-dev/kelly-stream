@@ -1,6 +1,8 @@
 const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
+const OpenAI = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
 app.use(express.json());
@@ -29,10 +31,24 @@ req.on("data", chunk => {
   chunks.push(chunk);
 });
 
-req.on("end", () => {
+req.on("end", async () => {
   const buffer = Buffer.concat(chunks);
 console.log("Received audio size:", buffer.length);
+
+try {
+  const transcription = await openai.audio.transcriptions.create({
+    file: new Blob([buffer]),
+    model: "gpt-4o-transcribe"
+  });
+
+  console.log("User said:", transcription.text);
+
   res.send("ok");
+
+} catch (err) {
+  console.error(err);
+  res.status(500).send("error");
+}
 });
 });
 
