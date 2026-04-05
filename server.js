@@ -26,17 +26,30 @@ app.post("/voice", upload.single("file"), async (req, res) => {
 
 app.post("/voice-test", (req, res) => {
   console.log("voice-test hit");
+  res.send("ok");
+});
 
+app.post("/voice", upload.single("file"), async (req, res) => {
+  console.log("VOICE HIT");
+  console.log("FILE:", req.file);
 
-req.on("end", async () => {
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(req.file.path),
+      model: "gpt-4o-transcribe"
+    });
+
+    console.log("User said:", transcription.text);
+
+    res.send("ok");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("error");
+  }
+});
+
   
-console.log("Received audio size:", buffer.length);
 
-try {
-  const transcription = await openai.audio.transcriptions.create({
-    file: fs.createReadStream(req.file.path),
-    model: "gpt-4o-transcribe"
-  });
 
   console.log("User said:", transcription.text);
 
