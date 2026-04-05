@@ -20,7 +20,17 @@ app.post("/voice", (req, res) => {
 
 app.post("/voice-test", (req, res) => {
   console.log("voice-test hit");
+
+let size = 0;
+
+req.on("data", chunk => {
+  size += chunk.length;
+});
+
+req.on("end", () => {
+  console.log("Received audio size:", size);
   res.send("ok");
+});
 });
 
 const server = http.createServer(app);
