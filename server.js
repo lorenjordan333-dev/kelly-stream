@@ -179,9 +179,29 @@ async function sendToElevenLabsWeb(text, ws, onDone) {
   }
 }
 
-// TWILIO STREAM
-const wssTwilio = new WebSocket.Server({ server, path: "/stream" });
+// WEBSOCKET SERVERS
+const wssTwilio = new WebSocket.Server({ noServer: true });
+const wssWeb = new WebSocket.Server({ noServer: true });
 
+// HANDLE UPGRADES MANUALLY
+server.on("upgrade", (request, socket, head) => {
+  const pathname = request.url;
+  console.log("WebSocket upgrade request:", pathname);
+
+  if (pathname === "/stream") {
+    wssTwilio.handleUpgrade(request, socket, head, (ws) => {
+      wssTwilio.emit("connection", ws, request);
+    });
+  } else if (pathname === "/web-stream") {
+    wssWeb.handleUpgrade(request, socket, head, (ws) => {
+      wssWeb.emit("connection", ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+// TWILIO
 wssTwilio.on("connection", (ws) => {
   console.log("Twilio connected");
 
@@ -274,9 +294,7 @@ wssTwilio.on("connection", (ws) => {
   openaiWs.on("error", (err) => console.error("OpenAI error (Twilio):", err.message));
 });
 
-// WEB STREAM (BROWSER)
-const wssWeb = new WebSocket.Server({ server, path: "/web-stream" });
-
+// WEB BROWSER
 wssWeb.on("connection", (ws) => {
   console.log("Web browser connected");
 
