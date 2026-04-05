@@ -31,7 +31,7 @@ app.post("/voice", (req, res) => {
   res.status(200).send(twiml);
 });
 
-app.post("/voice-test", (req, res) => {
+app.all("/voice-test", (req, res) => {
   console.log("voice-test hit");
   res.send("ok");
 });
