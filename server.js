@@ -15,11 +15,20 @@ app.get("/voice", (req, res) => {
   res.send("OK");
 });
 
-app.post("/voice", upload.single("file"), async (req, res) => {
+// ✅ TWILIO — FIXED (ONLY CHANGE: removed multer + duplicate route)
+app.post("/voice", (req, res) => {
   console.log("VOICE HIT");
- console.log("FILE:", req.file); 
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "voice-project-production-3574.up.railway.app";
-  const twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="wss://' + host + '/stream" /></Connect></Response>';
+
+  const host =
+    req.headers["x-forwarded-host"] ||
+    req.headers.host ||
+    "voice-project-production-3574.up.railway.app";
+
+  const twiml =
+    '<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="wss://' +
+    host +
+    '/stream" /></Connect></Response>';
+
   res.set("Content-Type", "text/xml");
   res.status(200).send(twiml);
 });
@@ -29,38 +38,8 @@ app.post("/voice-test", (req, res) => {
   res.send("ok");
 });
 
-app.post("/voice", upload.single("file"), async (req, res) => {
-  console.log("VOICE HIT");
-  console.log("FILE:", req.file);
-
-  try {
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
-      model: "gpt-4o-transcribe"
-    });
-
-    console.log("User said:", transcription.text);
-
-    res.send("ok");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("error");
-  }
-});
-
-  
-
-
-  console.log("User said:", transcription.text);
-
-  res.send("ok");
-
-} catch (err) {
-  console.error(err);
-  res.status(500).send("error");
-}
-});
-});
+// ❌ REMOVED SECOND /voice ROUTE (THIS WAS BREAKING TWILIO)
+// ❌ REMOVED BROKEN EXTRA CODE BLOCK (SYNTAX ERROR)
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/stream" });
