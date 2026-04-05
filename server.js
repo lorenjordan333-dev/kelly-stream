@@ -17,7 +17,10 @@ app.post("/voice", (req, res) => {
   res.set("Content-Type", "text/xml");
   res.status(200).send(twiml);
 });
-
+app.post("/voice-test", (req, res) => {
+  console.log("voice-test hit");
+  res.send("ok");
+});
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: "/stream" });
 
