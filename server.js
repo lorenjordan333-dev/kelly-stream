@@ -37,7 +37,7 @@ console.log("Received audio size:", buffer.length);
 
 try {
   const transcription = await openai.audio.transcriptions.create({
-    file: new Blob([buffer]),
+    file: buffer,
     model: "gpt-4o-transcribe"
   });
 
