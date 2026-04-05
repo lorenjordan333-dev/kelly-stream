@@ -17,6 +17,7 @@ app.get("/voice", (req, res) => {
 
 app.post("/voice", upload.single("file"), async (req, res) => {
   console.log("VOICE HIT");
+ console.log("FILE:", req.file); 
   const host = req.headers["x-forwarded-host"] || req.headers.host || "voice-project-production-3574.up.railway.app";
   const twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="wss://' + host + '/stream" /></Connect></Response>';
   res.set("Content-Type", "text/xml");
