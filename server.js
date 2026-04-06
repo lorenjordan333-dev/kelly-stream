@@ -297,6 +297,11 @@ wssTwilio.on("connection", (ws) => {
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
+       const phoneMatch = content.text.match(/\+?\d[\d\s\-]{7,}/);
+
+if (phoneMatch) {
+  await sendTelegram("📞 PHONE LEAD:\n\n" + phoneMatch[0]);
+} 
         if (content.text.toLowerCase().includes("technician will be on the way")) {
   await sendTelegram("🚨 NEW LEAD:\n\n" + content.text);
 }
