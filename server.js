@@ -247,6 +247,7 @@ wssTwilio.on("connection", (ws) => {
 
   let streamSid = null;
   let kellySpeaking = false;
+  let sessionReady = false;
   let callData = {
     phoneNumber: null,
     address: null,
@@ -281,33 +282,6 @@ wssTwilio.on("connection", (ws) => {
         },
       },
     }));
-
-    openaiWs.send(JSON.stringify({ type: "response.create" }));
-  });
-
-  ws.on("message", (message) => {
-    let data;
-    try {
-      data = JSON.parse(message.toString());
-    } catch (e) {
-      return;
-    }
-
-    if (data.event === "start") {
-      streamSid = data.start.streamSid;
-      console.log("Stream started:", streamSid);
-      return;
-    }
-
-    if (data.event === "media") {
-      if (kellySpeaking) return;
-      if (openaiWs.readyState === WebSocket.OPEN) {
-        openaiWs.send(JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: data.media.payload,
-        }));
-      }
-    }
   });
 
   openaiWs.on("message", async (message) => {
@@ -315,6 +289,13 @@ wssTwilio.on("connection", (ws) => {
     try {
       data = JSON.parse(message.toString());
     } catch (e) {
+      return;
+    }
+
+    if (data.type === "session.updated" && !sessionReady) {
+      sessionReady = true;
+      console.log("Session ready (Twilio), sending response.create");
+      openaiWs.send(JSON.stringify({ type: "response.create" }));
       return;
     }
 
@@ -352,6 +333,31 @@ wssTwilio.on("connection", (ws) => {
     }
   });
 
+  ws.on("message", (message) => {
+    let data;
+    try {
+      data = JSON.parse(message.toString());
+    } catch (e) {
+      return;
+    }
+
+    if (data.event === "start") {
+      streamSid = data.start.streamSid;
+      console.log("Stream started:", streamSid);
+      return;
+    }
+
+    if (data.event === "media") {
+      if (kellySpeaking) return;
+      if (openaiWs.readyState === WebSocket.OPEN) {
+        openaiWs.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: data.media.payload,
+        }));
+      }
+    }
+  });
+
   ws.on("close", () => {
     console.log("Twilio disconnected");
     if (callData.phoneNumber) {
@@ -370,6 +376,7 @@ wssWeb.on("connection", (ws) => {
   sendTelegram("🔴 NEW VISITOR STARTED KELLY (WEB)");
 
   let kellySpeaking = false;
+  let sessionReady = false;
   let callData = {
     phoneNumber: null,
     address: null,
@@ -404,22 +411,6 @@ wssWeb.on("connection", (ws) => {
         },
       },
     }));
-
-    openaiWs.send(JSON.stringify({ type: "response.create" }));
-  });
-
-  ws.on("message", (message) => {
-    if (kellySpeaking) return;
-
-    if (openaiWs.readyState === WebSocket.OPEN) {
-      if (Buffer.isBuffer(message)) {
-        const base64Audio = message.toString("base64");
-        openaiWs.send(JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: base64Audio,
-        }));
-      }
-    }
   });
 
   openaiWs.on("message", async (message) => {
@@ -427,6 +418,13 @@ wssWeb.on("connection", (ws) => {
     try {
       data = JSON.parse(message.toString());
     } catch (e) {
+      return;
+    }
+
+    if (data.type === "session.updated" && !sessionReady) {
+      sessionReady = true;
+      console.log("Session ready (Web), sending response.create");
+      openaiWs.send(JSON.stringify({ type: "response.create" }));
       return;
     }
 
@@ -460,6 +458,20 @@ wssWeb.on("connection", (ws) => {
           kellySpeaking = false;
           console.log("Kelly done speaking (Web)");
         });
+      }
+    }
+  });
+
+  ws.on("message", (message) => {
+    if (kellySpeaking) return;
+
+    if (openaiWs.readyState === WebSocket.OPEN) {
+      if (Buffer.isBuffer(message)) {
+        const base64Audio = message.toString("base64");
+        openaiWs.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: base64Audio,
+        }));
       }
     }
   });
