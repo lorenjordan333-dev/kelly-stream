@@ -1,21 +1,38 @@
 const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
-async function sendTelegram(message) {
-  const token = "8774007038:AAERUXQH4nUWyr-L9c5T3HK9Dt2BUAlKzUo";
-  const chatId = "5382867739";
 
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: message
-    })
-  });
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8774007038:AAERUXQH4nUWyr-L9c5T3HK9Dt2BUAlKzUo";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "5382867739";
+
+async function sendTelegram(message) {
+  try {
+    console.log("Sending to Telegram:", message);
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error("Telegram error:", response.status, errorData);
+      return false;
+    }
+
+    console.log("Telegram sent successfully");
+    return true;
+  } catch (err) {
+    console.error("Telegram fetch error:", err.message);
+    return false;
+  }
 }
+
 const app = express();
 
 app.use((req, res, next) => {
@@ -66,7 +83,6 @@ Always collect the phone number first.
 PHONE CONFIRMATION:
 
 When the customer gives a phone number, you must repeat it back clearly to confirm.
-
 Always repeat the number exactly as the customer said it.
 
 WAITING RULE:
@@ -235,6 +251,11 @@ wssTwilio.on("connection", (ws) => {
 
   let streamSid = null;
   let kellySpeaking = false;
+  let callData = {
+    phoneNumber: null,
+    service: null,
+    address: null
+  };
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -304,14 +325,29 @@ wssTwilio.on("connection", (ws) => {
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
-       const phoneMatch = content.text.match(/\+?\d[\d\s\-]{7,}/);
 
-if (phoneMatch) {
-  await sendTelegram("📞 PHONE LEAD:\n\n" + phoneMatch[0]);
-} 
-        if (content.text.toLowerCase().includes("technician will be on the way")) {
-  await sendTelegram("🚨 NEW LEAD:\n\n" + content.text);
-}
+        // EXTRACT PHONE NUMBER
+        const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
+        const phoneMatch = content.text.match(phoneRegex);
+        if (phoneMatch && !callData.phoneNumber) {
+          callData.phoneNumber = phoneMatch[0];
+          console.log("Phone captured:", callData.phoneNumber);
+          await sendTelegram(`📞 PHONE CAPTURED (PHONE):\n${callData.phoneNumber}`);
+        }
+
+        // EXTRACT ADDRESS
+        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way|trail|tr)[\w\s]*)/i;
+        const addressMatch = content.text.match(addressRegex);
+        if (addressMatch && !callData.address) {
+          callData.address = addressMatch[0];
+          console.log("Address captured:", callData.address);
+        }
+
+        // SEND FULL LEAD WHEN COMPLETE
+        if (callData.phoneNumber && callData.address) {
+          await sendTelegram(`🚨 COMPLETE LEAD (PHONE):\n\n📞 Phone: ${callData.phoneNumber}\n📍 Address: ${callData.address}`);
+        }
+
         kellySpeaking = true;
         await sendToElevenLabs(content.text, ws, streamSid, () => {
           kellySpeaking = false;
@@ -323,6 +359,9 @@ if (phoneMatch) {
 
   ws.on("close", () => {
     console.log("Twilio disconnected");
+    if (callData.phoneNumber) {
+      sendTelegram(`⚠️ CALL ENDED (PHONE):\n${callData.phoneNumber}`);
+    }
     openaiWs.close();
   });
 
@@ -335,6 +374,11 @@ wssWeb.on("connection", (ws) => {
   console.log("Web browser connected");
 
   let kellySpeaking = false;
+  let callData = {
+    phoneNumber: null,
+    service: null,
+    address: null
+  };
 
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
@@ -393,9 +437,29 @@ wssWeb.on("connection", (ws) => {
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
-        if (content.text.toLowerCase().includes("your number")) {
-  await sendTelegram("📞 PHONE CAPTURED:\n\n" + content.text);
-}
+
+        // EXTRACT PHONE NUMBER
+        const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
+        const phoneMatch = content.text.match(phoneRegex);
+        if (phoneMatch && !callData.phoneNumber) {
+          callData.phoneNumber = phoneMatch[0];
+          console.log("Phone captured:", callData.phoneNumber);
+          await sendTelegram(`📞 PHONE CAPTURED (WEB):\n${callData.phoneNumber}`);
+        }
+
+        // EXTRACT ADDRESS
+        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way|trail|tr)[\w\s]*)/i;
+        const addressMatch = content.text.match(addressRegex);
+        if (addressMatch && !callData.address) {
+          callData.address = addressMatch[0];
+          console.log("Address captured:", callData.address);
+        }
+
+        // SEND FULL LEAD WHEN COMPLETE
+        if (callData.phoneNumber && callData.address) {
+          await sendTelegram(`🚨 COMPLETE LEAD (WEB):\n\n📞 Phone: ${callData.phoneNumber}\n📍 Address: ${callData.address}`);
+        }
+
         kellySpeaking = true;
         await sendToElevenLabsWeb(content.text, ws, () => {
           kellySpeaking = false;
@@ -407,6 +471,9 @@ wssWeb.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Web browser disconnected");
+    if (callData.phoneNumber) {
+      sendTelegram(`⚠️ CALL ENDED (WEB):\n${callData.phoneNumber}`);
+    }
     openaiWs.close();
   });
 
@@ -418,5 +485,5 @@ const PORT = process.env.PORT || 8080;
 
 server.listen(PORT, () => {
   console.log("voice-stream running on port " + PORT);
-  sendTelegram("TEST MESSAGE");
+  sendTelegram("✅ Kelly service started");
 });
