@@ -393,6 +393,9 @@ wssWeb.on("connection", (ws) => {
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
+        if (content.text.toLowerCase().includes("your number")) {
+  await sendTelegram("📞 PHONE CAPTURED:\n\n" + content.text);
+}
         kellySpeaking = true;
         await sendToElevenLabsWeb(content.text, ws, () => {
           kellySpeaking = false;
