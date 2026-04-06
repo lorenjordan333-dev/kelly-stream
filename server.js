@@ -415,4 +415,5 @@ const PORT = process.env.PORT || 8080;
 
 server.listen(PORT, () => {
   console.log("voice-stream running on port " + PORT);
+  sendTelegram("TEST MESSAGE");
 });
