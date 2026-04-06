@@ -322,7 +322,7 @@ wssTwilio.on("connection", (ws) => {
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
 
-        const phoneRegex = /\b\d(?:[-.\s]?\d){6,14}\b/;
+        const phoneRegex = /\d[\d\s.-]*\d/;
         const phoneMatch = content.text.match(phoneRegex);
         if (phoneMatch && !callData.phoneNumber) {
           callData.phoneNumber = phoneMatch[0].trim();
@@ -365,6 +365,7 @@ wssTwilio.on("connection", (ws) => {
 // WEB BROWSER
 wssWeb.on("connection", (ws) => {
   console.log("Web browser connected");
+  sendTelegram("🔴 NEW VISITOR STARTED KELLY (WEB)");
 
   let kellySpeaking = false;
   let callData = {
@@ -431,7 +432,7 @@ wssWeb.on("connection", (ws) => {
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
 
-        const phoneRegex = /\b\d(?:[-.\s]?\d){6,14}\b/;
+        const phoneRegex = /\d[\d\s.-]*\d/;
         const phoneMatch = content.text.match(phoneRegex);
         if (phoneMatch && !callData.phoneNumber) {
           callData.phoneNumber = phoneMatch[0].trim();
