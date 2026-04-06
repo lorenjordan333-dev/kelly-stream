@@ -66,8 +66,6 @@ Always collect the phone number first.
 PHONE CONFIRMATION:
 
 When the customer gives a phone number, you must repeat it back clearly to confirm.
-Example:
-"Got it, your number is 0612345678, correct?"
 
 Always repeat the number exactly as the customer said it.
 
