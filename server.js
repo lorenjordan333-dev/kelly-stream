@@ -250,7 +250,8 @@ wssTwilio.on("connection", (ws) => {
   let callData = {
     phoneNumber: null,
     address: null,
-    source: "PHONE"
+    source: "PHONE",
+    leadSent: false
   };
 
   const openaiWs = new WebSocket(
@@ -337,7 +338,8 @@ wssTwilio.on("connection", (ws) => {
           console.log("Address captured:", callData.address);
         }
 
-        if (callData.phoneNumber && callData.address) {
+        if (callData.phoneNumber && callData.address && !callData.leadSent) {
+          callData.leadSent = true;
           await sendTelegram("🚨 COMPLETE LEAD (PHONE):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
         }
 
@@ -371,7 +373,8 @@ wssWeb.on("connection", (ws) => {
   let callData = {
     phoneNumber: null,
     address: null,
-    source: "WEB"
+    source: "WEB",
+    leadSent: false
   };
 
   const openaiWs = new WebSocket(
@@ -447,7 +450,8 @@ wssWeb.on("connection", (ws) => {
           console.log("Address captured:", callData.address);
         }
 
-        if (callData.phoneNumber && callData.address) {
+        if (callData.phoneNumber && callData.address && !callData.leadSent) {
+          callData.leadSent = true;
           await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
         }
 
