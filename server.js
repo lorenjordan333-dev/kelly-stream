@@ -1,7 +1,21 @@
 const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
+async function sendTelegram(message) {
+  const token = "8774007038:AAERUXQH4nUWyr-L9c5T3HK9Dt2BUAlKzUo";
+  const chatId = "5382867739";
 
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: message
+    })
+  });
+}
 const app = express();
 
 app.use((req, res, next) => {
@@ -276,6 +290,9 @@ wssTwilio.on("connection", (ws) => {
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
+        if (content.text.toLowerCase().includes("technician will be on the way")) {
+  await sendTelegram("🚨 NEW LEAD:\n\n" + content.text);
+}
         kellySpeaking = true;
         await sendToElevenLabs(content.text, ws, streamSid, () => {
           kellySpeaking = false;
