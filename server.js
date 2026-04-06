@@ -2,7 +2,7 @@ const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8774007038:AAERUXQH4nUWyr-L9c5T3HK9Dt2BUAlKzUo";
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "5382867739";
 
 async function sendTelegram(message) {
@@ -73,7 +73,6 @@ You always begin the call first by saying exactly:
 "Locksmith services, hi, this is Kelly, how can I help?"
 
 PHONE COLLECTION:
-
 After the customer explains the problem, you must ask:
 "Can I please get your phone number in case we get disconnected?"
 
@@ -81,7 +80,6 @@ Do not ask for the address before getting the phone number.
 Always collect the phone number first.
 
 PHONE CONFIRMATION:
-
 When the customer gives a phone number, you must repeat it back clearly to confirm.
 Always repeat the number exactly as the customer said it.
 
@@ -223,11 +221,9 @@ async function sendToElevenLabsWeb(text, ws, onDone) {
   }
 }
 
-// WEBSOCKET SERVERS
 const wssTwilio = new WebSocket.Server({ noServer: true });
 const wssWeb = new WebSocket.Server({ noServer: true });
 
-// HANDLE UPGRADES MANUALLY
 server.on("upgrade", (request, socket, head) => {
   const pathname = request.url;
   console.log("WebSocket upgrade request:", pathname);
@@ -253,8 +249,8 @@ wssTwilio.on("connection", (ws) => {
   let kellySpeaking = false;
   let callData = {
     phoneNumber: null,
-    service: null,
-    address: null
+    address: null,
+    source: "PHONE"
   };
 
   const openaiWs = new WebSocket(
@@ -326,26 +322,23 @@ wssTwilio.on("connection", (ws) => {
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
 
-        // EXTRACT PHONE NUMBER
-        const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
+        const phoneRegex = /\b\d(?:[-.\s]?\d){6,14}\b/;
         const phoneMatch = content.text.match(phoneRegex);
         if (phoneMatch && !callData.phoneNumber) {
-          callData.phoneNumber = phoneMatch[0];
+          callData.phoneNumber = phoneMatch[0].trim();
           console.log("Phone captured:", callData.phoneNumber);
-          await sendTelegram(`📞 PHONE CAPTURED (PHONE):\n${callData.phoneNumber}`);
+          await sendTelegram("📞 PHONE CAPTURED (PHONE):\n" + callData.phoneNumber);
         }
 
-        // EXTRACT ADDRESS
-        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way|trail|tr)[\w\s]*)/i;
+        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way)[\w\s]*)/i;
         const addressMatch = content.text.match(addressRegex);
         if (addressMatch && !callData.address) {
-          callData.address = addressMatch[0];
+          callData.address = addressMatch[0].trim();
           console.log("Address captured:", callData.address);
         }
 
-        // SEND FULL LEAD WHEN COMPLETE
         if (callData.phoneNumber && callData.address) {
-          await sendTelegram(`🚨 COMPLETE LEAD (PHONE):\n\n📞 Phone: ${callData.phoneNumber}\n📍 Address: ${callData.address}`);
+          await sendTelegram("🚨 COMPLETE LEAD (PHONE):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
         }
 
         kellySpeaking = true;
@@ -360,7 +353,7 @@ wssTwilio.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("Twilio disconnected");
     if (callData.phoneNumber) {
-      sendTelegram(`⚠️ CALL ENDED (PHONE):\n${callData.phoneNumber}`);
+      sendTelegram("⚠️ CALL ENDED (PHONE):\n" + callData.phoneNumber);
     }
     openaiWs.close();
   });
@@ -376,8 +369,8 @@ wssWeb.on("connection", (ws) => {
   let kellySpeaking = false;
   let callData = {
     phoneNumber: null,
-    service: null,
-    address: null
+    address: null,
+    source: "WEB"
   };
 
   const openaiWs = new WebSocket(
@@ -438,26 +431,23 @@ wssWeb.on("connection", (ws) => {
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
 
-        // EXTRACT PHONE NUMBER
-        const phoneRegex = /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/;
+        const phoneRegex = /\b\d(?:[-.\s]?\d){6,14}\b/;
         const phoneMatch = content.text.match(phoneRegex);
         if (phoneMatch && !callData.phoneNumber) {
-          callData.phoneNumber = phoneMatch[0];
+          callData.phoneNumber = phoneMatch[0].trim();
           console.log("Phone captured:", callData.phoneNumber);
-          await sendTelegram(`📞 PHONE CAPTURED (WEB):\n${callData.phoneNumber}`);
+          await sendTelegram("📞 PHONE CAPTURED (WEB):\n" + callData.phoneNumber);
         }
 
-        // EXTRACT ADDRESS
-        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way|trail|tr)[\w\s]*)/i;
+        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way)[\w\s]*)/i;
         const addressMatch = content.text.match(addressRegex);
         if (addressMatch && !callData.address) {
-          callData.address = addressMatch[0];
+          callData.address = addressMatch[0].trim();
           console.log("Address captured:", callData.address);
         }
 
-        // SEND FULL LEAD WHEN COMPLETE
         if (callData.phoneNumber && callData.address) {
-          await sendTelegram(`🚨 COMPLETE LEAD (WEB):\n\n📞 Phone: ${callData.phoneNumber}\n📍 Address: ${callData.address}`);
+          await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
         }
 
         kellySpeaking = true;
@@ -472,7 +462,7 @@ wssWeb.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("Web browser disconnected");
     if (callData.phoneNumber) {
-      sendTelegram(`⚠️ CALL ENDED (WEB):\n${callData.phoneNumber}`);
+      sendTelegram("⚠️ CALL ENDED (WEB):\n" + callData.phoneNumber);
     }
     openaiWs.close();
   });
