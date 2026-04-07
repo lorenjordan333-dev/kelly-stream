@@ -276,16 +276,11 @@ async function sendToElevenLabsWeb(text, ws, onDone, getState, setState) {
       return;
     }
 
+    // Send audio to frontend - state switches to LISTENING when frontend sends audio_done
     ws.send(audioBuffer);
+    console.log("Audio sent to frontend (Web), waiting for audio_done");
 
-    const durationMs = Math.max(1500, (text.split(" ").length / 3) * 1000);
-    setTimeout(() => {
-      if (getState() === STATE_SPEAKING) {
-        setState(STATE_LISTENING);
-        console.log("Kelly done speaking (Web)");
-      }
-      if (onDone) onDone();
-    }, durationMs);
+    if (onDone) onDone();
 
   } catch (err) {
     console.error("Eleven Labs web error:", err.message);
@@ -323,7 +318,7 @@ wssTwilio.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
-  let speechStoppedTimeout = null; // FIX 2: delay before THINKING
+  let speechStoppedTimeout = null;
 
   const getState = () => state;
   const setState = (newState) => {
@@ -384,7 +379,7 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // FIX 1: Only interrupt if Kelly is actually SPEAKING or THINKING
+    // FIX 1: Only interrupt if actually SPEAKING or THINKING
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Twilio)");
 
@@ -417,7 +412,7 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // FIX 2: Add 500ms delay before committing to THINKING
+    // FIX 2: 500ms delay before THINKING
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Twilio)");
 
@@ -524,7 +519,8 @@ wssWeb.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
-  let speechStoppedTimeout = null; // FIX 2: delay before THINKING
+  let speechStoppedTimeout = null;
+  let audioDoneTimeout = null; // fallback if audio_done never arrives
 
   const getState = () => state;
   const setState = (newState) => {
@@ -585,7 +581,7 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // FIX 1: Only interrupt if Kelly is actually SPEAKING or THINKING
+    // FIX 1: Only interrupt if actually SPEAKING or THINKING
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Web)");
 
@@ -595,6 +591,11 @@ wssWeb.on("connection", (ws) => {
       }
 
       console.log("Interrupting Kelly (Web)");
+
+      if (audioDoneTimeout) {
+        clearTimeout(audioDoneTimeout);
+        audioDoneTimeout = null;
+      }
 
       if (speechStoppedTimeout) {
         clearTimeout(speechStoppedTimeout);
@@ -611,7 +612,7 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // FIX 2: Add 500ms delay before committing to THINKING
+    // FIX 2: 500ms delay before THINKING
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Web)");
 
@@ -661,6 +662,14 @@ wssWeb.on("connection", (ws) => {
 
           await sendToElevenLabsWeb(content.text, ws, () => {
             responseInProgress = false;
+
+            // Fallback: if audio_done never arrives within 15s, reset anyway
+            audioDoneTimeout = setTimeout(() => {
+              if (state === STATE_SPEAKING) {
+                console.log("audio_done fallback timeout (Web) - resetting to LISTENING");
+                setState(STATE_LISTENING);
+              }
+            }, 15000);
           }, getState, setState);
         }, 350);
       } else {
@@ -671,47 +680,64 @@ wssWeb.on("connection", (ws) => {
   });
 
   ws.on("message", async (message) => {
-    if (!Buffer.isBuffer(message)) {
-      let data;
-      try {
-        data = JSON.parse(message.toString());
-      } catch (e) {
-        return;
-      }
+    // Binary = microphone audio
+    if (Buffer.isBuffer(message)) {
+      if (state === STATE_SPEAKING || state === STATE_THINKING) return;
 
-      if (data.type === "typed_data") {
-        console.log("Typed data received:", data);
-
-        if (data.phoneNumber && !callData.phoneNumber) {
-          callData.phoneNumber = data.phoneNumber.trim();
-          console.log("Phone typed:", callData.phoneNumber);
-          await sendTelegram("📞 PHONE TYPED (WEB):\n" + callData.phoneNumber);
-        }
-
-        if (data.address && !callData.address) {
-          callData.address = data.address.trim();
-          console.log("Address typed:", callData.address);
-          await sendTelegram("📍 ADDRESS TYPED (WEB):\n" + callData.address);
-        }
-
-        if (callData.phoneNumber && callData.address && !callData.leadSent) {
-          callData.leadSent = true;
-          await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
-        }
-
-        return;
+      if (openaiWs.readyState === WebSocket.OPEN) {
+        const base64Audio = message.toString("base64");
+        openaiWs.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: base64Audio,
+        }));
       }
       return;
     }
 
-    if (state === STATE_SPEAKING || state === STATE_THINKING) return;
+    // JSON messages
+    let data;
+    try {
+      data = JSON.parse(message.toString());
+    } catch (e) {
+      return;
+    }
 
-    if (openaiWs.readyState === WebSocket.OPEN) {
-      const base64Audio = message.toString("base64");
-      openaiWs.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: base64Audio,
-      }));
+    // Frontend finished playing audio - switch to LISTENING immediately
+    if (data.type === "audio_done") {
+      console.log("audio_done received (Web) - switching to LISTENING");
+
+      if (audioDoneTimeout) {
+        clearTimeout(audioDoneTimeout);
+        audioDoneTimeout = null;
+      }
+
+      if (state === STATE_SPEAKING) {
+        setState(STATE_LISTENING);
+      }
+      return;
+    }
+
+    if (data.type === "typed_data") {
+      console.log("Typed data received:", data);
+
+      if (data.phoneNumber && !callData.phoneNumber) {
+        callData.phoneNumber = data.phoneNumber.trim();
+        console.log("Phone typed:", callData.phoneNumber);
+        await sendTelegram("📞 PHONE TYPED (WEB):\n" + callData.phoneNumber);
+      }
+
+      if (data.address && !callData.address) {
+        callData.address = data.address.trim();
+        console.log("Address typed:", callData.address);
+        await sendTelegram("📍 ADDRESS TYPED (WEB):\n" + callData.address);
+      }
+
+      if (callData.phoneNumber && callData.address && !callData.leadSent) {
+        callData.leadSent = true;
+        await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
+      }
+
+      return;
     }
   });
 
@@ -719,6 +745,7 @@ wssWeb.on("connection", (ws) => {
     console.log("Web browser disconnected");
     if (thinkingTimeout) clearTimeout(thinkingTimeout);
     if (speechStoppedTimeout) clearTimeout(speechStoppedTimeout);
+    if (audioDoneTimeout) clearTimeout(audioDoneTimeout);
     if (callData.phoneNumber) {
       sendTelegram("⚠️ CALL ENDED (WEB):\n" + callData.phoneNumber);
     }
