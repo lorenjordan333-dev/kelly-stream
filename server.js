@@ -323,6 +323,7 @@ wssTwilio.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
+  let speechStoppedTimeout = null; // FIX 2: delay before THINKING
 
   const getState = () => state;
   const setState = (newState) => {
@@ -383,8 +384,21 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
+    // FIX 1: Only interrupt if Kelly is actually SPEAKING or THINKING
     if (data.type === "input_audio_buffer.speech_started") {
-      console.log("User started speaking (Twilio) - interrupting Kelly");
+      console.log("User started speaking (Twilio)");
+
+      if (state === STATE_LISTENING) {
+        console.log("Already LISTENING (Twilio), ignoring interrupt");
+        return;
+      }
+
+      console.log("Interrupting Kelly (Twilio)");
+
+      if (speechStoppedTimeout) {
+        clearTimeout(speechStoppedTimeout);
+        speechStoppedTimeout = null;
+      }
 
       if (thinkingTimeout) {
         clearTimeout(thinkingTimeout);
@@ -403,18 +417,25 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
+    // FIX 2: Add 500ms delay before committing to THINKING
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Twilio)");
-      if (state === STATE_LISTENING) {
-        setState(STATE_THINKING);
 
-        thinkingTimeout = setTimeout(() => {
-          if (state === STATE_THINKING) {
-            console.log("Thinking timeout (Twilio) - resetting to LISTENING");
-            setState(STATE_LISTENING);
-            responseInProgress = false;
+      if (state === STATE_LISTENING) {
+        speechStoppedTimeout = setTimeout(() => {
+          if (state === STATE_LISTENING) {
+            setState(STATE_THINKING);
+            console.log("Committed to THINKING (Twilio)");
+
+            thinkingTimeout = setTimeout(() => {
+              if (state === STATE_THINKING) {
+                console.log("Thinking timeout (Twilio) - resetting to LISTENING");
+                setState(STATE_LISTENING);
+                responseInProgress = false;
+              }
+            }, 5000);
           }
-        }, 5000);
+        }, 500);
       }
       return;
     }
@@ -483,6 +504,7 @@ wssTwilio.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("Twilio disconnected");
     if (thinkingTimeout) clearTimeout(thinkingTimeout);
+    if (speechStoppedTimeout) clearTimeout(speechStoppedTimeout);
     if (callData.phoneNumber) {
       sendTelegram("⚠️ CALL ENDED (PHONE):\n" + callData.phoneNumber);
     }
@@ -502,6 +524,7 @@ wssWeb.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
+  let speechStoppedTimeout = null; // FIX 2: delay before THINKING
 
   const getState = () => state;
   const setState = (newState) => {
@@ -562,8 +585,21 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
+    // FIX 1: Only interrupt if Kelly is actually SPEAKING or THINKING
     if (data.type === "input_audio_buffer.speech_started") {
-      console.log("User started speaking (Web) - interrupting Kelly");
+      console.log("User started speaking (Web)");
+
+      if (state === STATE_LISTENING) {
+        console.log("Already LISTENING (Web), ignoring interrupt");
+        return;
+      }
+
+      console.log("Interrupting Kelly (Web)");
+
+      if (speechStoppedTimeout) {
+        clearTimeout(speechStoppedTimeout);
+        speechStoppedTimeout = null;
+      }
 
       if (thinkingTimeout) {
         clearTimeout(thinkingTimeout);
@@ -575,18 +611,25 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
+    // FIX 2: Add 500ms delay before committing to THINKING
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Web)");
-      if (state === STATE_LISTENING) {
-        setState(STATE_THINKING);
 
-        thinkingTimeout = setTimeout(() => {
-          if (state === STATE_THINKING) {
-            console.log("Thinking timeout (Web) - resetting to LISTENING");
-            setState(STATE_LISTENING);
-            responseInProgress = false;
+      if (state === STATE_LISTENING) {
+        speechStoppedTimeout = setTimeout(() => {
+          if (state === STATE_LISTENING) {
+            setState(STATE_THINKING);
+            console.log("Committed to THINKING (Web)");
+
+            thinkingTimeout = setTimeout(() => {
+              if (state === STATE_THINKING) {
+                console.log("Thinking timeout (Web) - resetting to LISTENING");
+                setState(STATE_LISTENING);
+                responseInProgress = false;
+              }
+            }, 5000);
           }
-        }, 5000);
+        }, 500);
       }
       return;
     }
@@ -675,6 +718,7 @@ wssWeb.on("connection", (ws) => {
   ws.on("close", () => {
     console.log("Web browser disconnected");
     if (thinkingTimeout) clearTimeout(thinkingTimeout);
+    if (speechStoppedTimeout) clearTimeout(speechStoppedTimeout);
     if (callData.phoneNumber) {
       sendTelegram("⚠️ CALL ENDED (WEB):\n" + callData.phoneNumber);
     }
