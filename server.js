@@ -72,6 +72,7 @@ You always begin the call first by saying exactly:
 "Locksmith services, hi, this is Kelly, how can I help?"
 Then stop. Wait completely. Do not say anything else until the customer has fully finished speaking.
 
+
 UNDERSTANDING THE PROBLEM:
 Never assume the customer has a problem until they tell you. If they just say hello or ask how you are, respond naturally first.
 Listen carefully to everything the customer says. Do not interrupt. Do not assume. Do not predict.
@@ -233,6 +234,8 @@ wssTwilio.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
+  let greetingDone = false; // KEY: tracks if greeting finished and customer spoke at least once
+  let customerSpokeOnce = false;
   const getState = () => state;
   const setState = (newState) => { console.log("State change (Twilio):", state, "->", newState); state = newState; };
   let callData = { phoneNumber: null, address: null, source: "PHONE", leadSent: false };
@@ -260,7 +263,7 @@ wssTwilio.on("connection", (ws) => {
 
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
-      console.log("Session ready (Twilio), sending response.create");
+      console.log("Session ready (Twilio), sending greeting response.create");
       responseInProgress = true;
       setState(STATE_THINKING);
       openaiWs.send(JSON.stringify({ type: "response.create" }));
@@ -269,7 +272,6 @@ wssTwilio.on("connection", (ws) => {
 
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Twilio)");
-      // FIX 1: only interrupt if actually SPEAKING or THINKING
       if (state === STATE_LISTENING) {
         console.log("Already LISTENING (Twilio), ignoring interrupt");
         return;
@@ -287,6 +289,12 @@ wssTwilio.on("connection", (ws) => {
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Twilio)");
       if (state === STATE_LISTENING) {
+        // Only respond if greeting is done
+        if (!greetingDone) {
+          console.log("Greeting not done yet (Twilio), ignoring customer speech");
+          return;
+        }
+        customerSpokeOnce = true;
         setState(STATE_THINKING);
         thinkingTimeout = setTimeout(() => {
           if (state === STATE_THINKING) {
@@ -306,13 +314,25 @@ wssTwilio.on("connection", (ws) => {
         console.log("AI Response (Twilio):", content.text);
         if (state !== STATE_THINKING) { console.log("State is not THINKING (Twilio), skipping"); responseInProgress = false; return; }
         setState(STATE_SPEAKING);
+
+        // Mark greeting as done after first response plays
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) { responseInProgress = false; return; }
-          await sendToElevenLabs(content.text, ws, streamSid, () => { responseInProgress = false; }, getState, setState);
+          await sendToElevenLabs(content.text, ws, streamSid, () => {
+            responseInProgress = false;
+            if (!greetingDone) {
+              greetingDone = true;
+              console.log("Greeting done (Twilio) - now listening for customer");
+            }
+          }, getState, setState);
         }, 350);
       } else {
         responseInProgress = false;
         setState(STATE_LISTENING);
+        if (!greetingDone) {
+          greetingDone = true;
+          console.log("Greeting done (Twilio) - now listening for customer");
+        }
       }
     }
   });
@@ -349,6 +369,8 @@ wssWeb.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
+  let greetingDone = false; // KEY: tracks if greeting finished and customer spoke at least once
+  let customerSpokeOnce = false;
   const getState = () => state;
   const setState = (newState) => { console.log("State change (Web):", state, "->", newState); state = newState; };
   let callData = { phoneNumber: null, address: null, source: "WEB", leadSent: false };
@@ -376,7 +398,7 @@ wssWeb.on("connection", (ws) => {
 
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
-      console.log("Session ready (Web), sending response.create");
+      console.log("Session ready (Web), sending greeting response.create");
       responseInProgress = true;
       setState(STATE_THINKING);
       openaiWs.send(JSON.stringify({ type: "response.create" }));
@@ -385,7 +407,6 @@ wssWeb.on("connection", (ws) => {
 
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Web)");
-      // FIX 1: only interrupt if actually SPEAKING or THINKING
       if (state === STATE_LISTENING) {
         console.log("Already LISTENING (Web), ignoring interrupt");
         return;
@@ -400,6 +421,12 @@ wssWeb.on("connection", (ws) => {
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Web)");
       if (state === STATE_LISTENING) {
+        // Only respond if greeting is done
+        if (!greetingDone) {
+          console.log("Greeting not done yet (Web), ignoring customer speech");
+          return;
+        }
+        customerSpokeOnce = true;
         setState(STATE_THINKING);
         thinkingTimeout = setTimeout(() => {
           if (state === STATE_THINKING) {
@@ -419,13 +446,24 @@ wssWeb.on("connection", (ws) => {
         console.log("AI Response (Web):", content.text);
         if (state !== STATE_THINKING) { console.log("State is not THINKING (Web), skipping"); responseInProgress = false; return; }
         setState(STATE_SPEAKING);
+
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) { responseInProgress = false; return; }
-          await sendToElevenLabsWeb(content.text, ws, () => { responseInProgress = false; }, getState, setState);
+          await sendToElevenLabsWeb(content.text, ws, () => {
+            responseInProgress = false;
+            if (!greetingDone) {
+              greetingDone = true;
+              console.log("Greeting done (Web) - now listening for customer");
+            }
+          }, getState, setState);
         }, 350);
       } else {
         responseInProgress = false;
         setState(STATE_LISTENING);
+        if (!greetingDone) {
+          greetingDone = true;
+          console.log("Greeting done (Web) - now listening for customer");
+        }
       }
     }
   });
