@@ -136,7 +136,12 @@ ETA:
 Only if the customer asks how long, say:
 "About 20 to 25 minutes."`;
 
-async function sendToElevenLabs(text, ws, streamSid, onDone) {
+// State constants
+const STATE_LISTENING = "LISTENING";
+const STATE_THINKING = "THINKING";
+const STATE_SPEAKING = "SPEAKING";
+
+async function sendToElevenLabs(text, ws, streamSid, onDone, getState, setState) {
   console.log("Sending to Eleven Labs:", text);
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
@@ -161,12 +166,27 @@ async function sendToElevenLabs(text, ws, streamSid, onDone) {
 
     if (!response.ok) {
       console.error("Eleven Labs error:", response.status);
+      setState(STATE_LISTENING);
+      if (onDone) onDone();
+      return;
+    }
+
+    // Check if interrupted before sending audio
+    if (getState() !== STATE_SPEAKING) {
+      console.log("Interrupted before audio sent (Twilio), skipping playback");
       if (onDone) onDone();
       return;
     }
 
     const audioBuffer = await response.arrayBuffer();
     const base64Audio = Buffer.from(audioBuffer).toString("base64");
+
+    // Check again after await
+    if (getState() !== STATE_SPEAKING) {
+      console.log("Interrupted after fetch (Twilio), skipping playback");
+      if (onDone) onDone();
+      return;
+    }
 
     ws.send(JSON.stringify({
       event: "media",
@@ -176,16 +196,21 @@ async function sendToElevenLabs(text, ws, streamSid, onDone) {
 
     const durationMs = Math.max(1500, (text.split(" ").length / 3) * 1000);
     setTimeout(() => {
+      if (getState() === STATE_SPEAKING) {
+        setState(STATE_LISTENING);
+        console.log("Kelly done speaking (Twilio)");
+      }
       if (onDone) onDone();
     }, durationMs);
 
   } catch (err) {
     console.error("Eleven Labs error:", err.message);
+    setState(STATE_LISTENING);
     if (onDone) onDone();
   }
 }
 
-async function sendToElevenLabsWeb(text, ws, onDone) {
+async function sendToElevenLabsWeb(text, ws, onDone, getState, setState) {
   console.log("WEB - Sending to Eleven Labs:", text);
   const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
 
@@ -210,20 +235,41 @@ async function sendToElevenLabsWeb(text, ws, onDone) {
 
     if (!response.ok) {
       console.error("Eleven Labs web error:", response.status);
+      setState(STATE_LISTENING);
+      if (onDone) onDone();
+      return;
+    }
+
+    // Check if interrupted before sending audio
+    if (getState() !== STATE_SPEAKING) {
+      console.log("Interrupted before audio sent (Web), skipping playback");
       if (onDone) onDone();
       return;
     }
 
     const audioBuffer = await response.arrayBuffer();
+
+    // Check again after await
+    if (getState() !== STATE_SPEAKING) {
+      console.log("Interrupted after fetch (Web), skipping playback");
+      if (onDone) onDone();
+      return;
+    }
+
     ws.send(audioBuffer);
 
     const durationMs = Math.max(1500, (text.split(" ").length / 3) * 1000);
     setTimeout(() => {
+      if (getState() === STATE_SPEAKING) {
+        setState(STATE_LISTENING);
+        console.log("Kelly done speaking (Web)");
+      }
       if (onDone) onDone();
     }, durationMs);
 
   } catch (err) {
     console.error("Eleven Labs web error:", err.message);
+    setState(STATE_LISTENING);
     if (onDone) onDone();
   }
 }
@@ -253,8 +299,17 @@ wssTwilio.on("connection", (ws) => {
   console.log("Twilio connected");
 
   let streamSid = null;
-  let kellySpeaking = false;
+  let state = STATE_LISTENING;
   let sessionReady = false;
+  let responseInProgress = false;
+  let thinkingTimeout = null;
+
+  const getState = () => state;
+  const setState = (newState) => {
+    console.log("State change (Twilio):", state, "->", newState);
+    state = newState;
+  };
+
   let callData = {
     phoneNumber: null,
     address: null,
@@ -284,8 +339,8 @@ wssTwilio.on("connection", (ws) => {
         turn_detection: {
           type: "server_vad",
           threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 1200,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 900,
         },
       },
     }));
@@ -299,23 +354,91 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
+    // Session ready - trigger greeting
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
       console.log("Session ready (Twilio), sending response.create");
+      responseInProgress = true;
+      setState(STATE_THINKING);
       openaiWs.send(JSON.stringify({ type: "response.create" }));
       return;
     }
 
+    // User started speaking - interrupt Kelly immediately
+    if (data.type === "input_audio_buffer.speech_started") {
+      console.log("User started speaking (Twilio) - interrupting Kelly");
+
+      if (thinkingTimeout) {
+        clearTimeout(thinkingTimeout);
+        thinkingTimeout = null;
+      }
+
+      // Clear Twilio audio stream immediately
+      if (streamSid && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          event: "clear",
+          streamSid: streamSid
+        }));
+      }
+
+      setState(STATE_LISTENING);
+      responseInProgress = false;
+      return;
+    }
+
+    // Silence detected - user finished speaking
+    if (data.type === "input_audio_buffer.speech_stopped") {
+      console.log("User stopped speaking (Twilio)");
+      if (state === STATE_LISTENING) {
+        setState(STATE_THINKING);
+
+        // 5 second safety timeout - reset if OpenAI never responds
+        thinkingTimeout = setTimeout(() => {
+          if (state === STATE_THINKING) {
+            console.log("Thinking timeout (Twilio) - resetting to LISTENING");
+            setState(STATE_LISTENING);
+            responseInProgress = false;
+          }
+        }, 5000);
+      }
+      return;
+    }
+
+    // OpenAI finished generating response text
     if (data.type === "response.done" && data.response) {
+      if (thinkingTimeout) {
+        clearTimeout(thinkingTimeout);
+        thinkingTimeout = null;
+      }
+
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
 
-        kellySpeaking = true;
-        await sendToElevenLabs(content.text, ws, streamSid, () => {
-          kellySpeaking = false;
-          console.log("Kelly done speaking (Twilio)");
-        });
+        // Only speak if we're still in THINKING state (not interrupted)
+        if (state !== STATE_THINKING) {
+          console.log("State is not THINKING (Twilio), skipping response");
+          responseInProgress = false;
+          return;
+        }
+
+        setState(STATE_SPEAKING);
+
+        // 350ms natural delay before speaking
+        setTimeout(async () => {
+          if (state !== STATE_SPEAKING) {
+            console.log("Interrupted during delay (Twilio), skipping");
+            responseInProgress = false;
+            return;
+          }
+
+          await sendToElevenLabs(content.text, ws, streamSid, () => {
+            responseInProgress = false;
+          }, getState, setState);
+        }, 350);
+      } else {
+        responseInProgress = false;
+        setState(STATE_LISTENING);
       }
     }
   });
@@ -335,7 +458,8 @@ wssTwilio.on("connection", (ws) => {
     }
 
     if (data.event === "media") {
-      if (kellySpeaking) return;
+      // Block audio to OpenAI if Kelly is speaking or thinking
+      if (state === STATE_SPEAKING || state === STATE_THINKING) return;
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(JSON.stringify({
           type: "input_audio_buffer.append",
@@ -347,6 +471,7 @@ wssTwilio.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Twilio disconnected");
+    if (thinkingTimeout) clearTimeout(thinkingTimeout);
     if (callData.phoneNumber) {
       sendTelegram("⚠️ CALL ENDED (PHONE):\n" + callData.phoneNumber);
     }
@@ -362,8 +487,17 @@ wssWeb.on("connection", (ws) => {
   console.log("Web browser connected");
   sendTelegram("🔴 NEW VISITOR STARTED KELLY (WEB)");
 
-  let kellySpeaking = false;
+  let state = STATE_LISTENING;
   let sessionReady = false;
+  let responseInProgress = false;
+  let thinkingTimeout = null;
+
+  const getState = () => state;
+  const setState = (newState) => {
+    console.log("State change (Web):", state, "->", newState);
+    state = newState;
+  };
+
   let callData = {
     phoneNumber: null,
     address: null,
@@ -393,8 +527,8 @@ wssWeb.on("connection", (ws) => {
         turn_detection: {
           type: "server_vad",
           threshold: 0.5,
-          prefix_padding_ms: 500,
-          silence_duration_ms: 1200,
+          prefix_padding_ms: 300,
+          silence_duration_ms: 900,
         },
       },
     }));
@@ -408,23 +542,83 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
+    // Session ready - trigger greeting
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
       console.log("Session ready (Web), sending response.create");
+      responseInProgress = true;
+      setState(STATE_THINKING);
       openaiWs.send(JSON.stringify({ type: "response.create" }));
       return;
     }
 
+    // User started speaking - interrupt Kelly immediately
+    if (data.type === "input_audio_buffer.speech_started") {
+      console.log("User started speaking (Web) - interrupting Kelly");
+
+      if (thinkingTimeout) {
+        clearTimeout(thinkingTimeout);
+        thinkingTimeout = null;
+      }
+
+      setState(STATE_LISTENING);
+      responseInProgress = false;
+      return;
+    }
+
+    // Silence detected - user finished speaking
+    if (data.type === "input_audio_buffer.speech_stopped") {
+      console.log("User stopped speaking (Web)");
+      if (state === STATE_LISTENING) {
+        setState(STATE_THINKING);
+
+        // 5 second safety timeout
+        thinkingTimeout = setTimeout(() => {
+          if (state === STATE_THINKING) {
+            console.log("Thinking timeout (Web) - resetting to LISTENING");
+            setState(STATE_LISTENING);
+            responseInProgress = false;
+          }
+        }, 5000);
+      }
+      return;
+    }
+
+    // OpenAI finished generating response text
     if (data.type === "response.done" && data.response) {
+      if (thinkingTimeout) {
+        clearTimeout(thinkingTimeout);
+        thinkingTimeout = null;
+      }
+
       const content = data.response.output?.[0]?.content?.[0];
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
 
-        kellySpeaking = true;
-        await sendToElevenLabsWeb(content.text, ws, () => {
-          kellySpeaking = false;
-          console.log("Kelly done speaking (Web)");
-        });
+        // Only speak if still in THINKING state
+        if (state !== STATE_THINKING) {
+          console.log("State is not THINKING (Web), skipping response");
+          responseInProgress = false;
+          return;
+        }
+
+        setState(STATE_SPEAKING);
+
+        // 350ms natural delay before speaking
+        setTimeout(async () => {
+          if (state !== STATE_SPEAKING) {
+            console.log("Interrupted during delay (Web), skipping");
+            responseInProgress = false;
+            return;
+          }
+
+          await sendToElevenLabsWeb(content.text, ws, () => {
+            responseInProgress = false;
+          }, getState, setState);
+        }, 350);
+      } else {
+        responseInProgress = false;
+        setState(STATE_LISTENING);
       }
     }
   });
@@ -465,7 +659,7 @@ wssWeb.on("connection", (ws) => {
     }
 
     // Handle audio from microphone
-    if (kellySpeaking) return;
+    if (state === STATE_SPEAKING || state === STATE_THINKING) return;
 
     if (openaiWs.readyState === WebSocket.OPEN) {
       const base64Audio = message.toString("base64");
@@ -478,6 +672,7 @@ wssWeb.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("Web browser disconnected");
+    if (thinkingTimeout) clearTimeout(thinkingTimeout);
     if (callData.phoneNumber) {
       sendTelegram("⚠️ CALL ENDED (WEB):\n" + callData.phoneNumber);
     }
