@@ -87,13 +87,14 @@ Only when you understand both, move to phone collection.
 
 PHONE COLLECTION:
 Once you understand their problem completely, ask:
-"Can I please get your phone number in case we get disconnected?"
+"Can I please get your phone number in case we get disconnected? You can also type it in the box on your screen if you prefer."
 
-Wait for them to give you a phone number.
-Do not move forward until they give you a number.
+Wait for them to give you a phone number, either by speaking or typing.
+Do not move forward until they provide a number.
 
 PHONE CONFIRMATION:
-When the customer gives a phone number, repeat it back digit by digit slowly and clearly to confirm.
+When the customer gives a phone number by voice, repeat it back digit by digit slowly and clearly to confirm.
+If they typed it, you can see it — just confirm: "Got it, so your number is [number], is that correct?"
 Wait for the customer to confirm it is correct before moving on.
 If the customer says no, wrong, or anything indicating the number is incorrect, you must say:
 "I am sorry about that. Can you please give me the number again slowly?"
@@ -116,11 +117,12 @@ Take your time. Do not rush.
 
 ADDRESS:
 After phone confirmation, ask:
-"Can you please give me the address so I can send a technician?"
+"Can you please give me the address so I can send a technician? You can also type it in the box on your screen if you prefer."
 
 You must have: street number, street name, city, and postal code.
 If any part is missing, ask only for what is missing.
-Repeat the address back to confirm before continuing.
+If they typed it, repeat it back to confirm before continuing.
+If they spoke it, repeat the address back to confirm before continuing.
 Do not continue without a complete confirmed address.
 
 AFTER ADDRESS:
@@ -482,7 +484,39 @@ wssWeb.on("connection", (ws) => {
     }
   });
 
-  ws.on("message", (message) => {
+  ws.on("message", async (message) => {
+    if (kellySpeaking && !(message instanceof Buffer)) {
+      let data;
+      try {
+        data = JSON.parse(message.toString());
+      } catch (e) {
+        return;
+      }
+
+      // STEP 2: Handle typed data from form
+      if (data.type === "typed_data") {
+        console.log("Typed data received:", data);
+        
+        if (data.phoneNumber && !callData.phoneNumber) {
+          callData.phoneNumber = data.phoneNumber.trim();
+          console.log("Phone typed:", callData.phoneNumber);
+          await sendTelegram("📞 PHONE TYPED (WEB):\n" + callData.phoneNumber);
+        }
+        
+        if (data.address && !callData.address) {
+          callData.address = data.address.trim();
+          console.log("Address typed:", callData.address);
+        }
+        
+        if (callData.phoneNumber && callData.address && !callData.leadSent) {
+          callData.leadSent = true;
+          await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
+        }
+        
+        return;
+      }
+    }
+
     if (kellySpeaking) return;
 
     if (openaiWs.readyState === WebSocket.OPEN) {
