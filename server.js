@@ -249,7 +249,7 @@ wssTwilio.on("connection", (ws) => {
         instructions: KELLY_INSTRUCTIONS,
         modalities: ["text"],
         input_audio_format: "g711_ulaw",
-        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 400 },
+        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
       },
     }));
   });
@@ -365,7 +365,7 @@ wssWeb.on("connection", (ws) => {
         instructions: KELLY_INSTRUCTIONS,
         modalities: ["text"],
         input_audio_format: "pcm16",
-        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 400 },
+        turn_detection: { type: "server_vad", threshold: 0.5, prefix_padding_ms: 300, silence_duration_ms: 500 },
       },
     }));
   });
