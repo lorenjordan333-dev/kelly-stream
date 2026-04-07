@@ -61,6 +61,22 @@ app.post("/voice-test", (req, res) => {
   res.send("ok");
 });
 
+app.post("/lead", async (req, res) => {
+  const { phoneNumber, address } = req.body;
+  console.log("Lead received:", phoneNumber, address);
+
+  if (!phoneNumber && !address) {
+    return res.status(400).json({ error: "No data received" });
+  }
+
+  let message = "🚨 NEW LEAD (WEB):\n\n";
+  if (phoneNumber) message += "📞 " + phoneNumber + "\n";
+  if (address) message += "📍 " + address;
+
+  await sendTelegram(message);
+  res.status(200).json({ success: true });
+});
+
 const server = http.createServer(app);
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -171,7 +187,6 @@ async function sendToElevenLabs(text, ws, streamSid, onDone, getState, setState)
       return;
     }
 
-    // Check if interrupted before sending audio
     if (getState() !== STATE_SPEAKING) {
       console.log("Interrupted before audio sent (Twilio), skipping playback");
       if (onDone) onDone();
@@ -181,7 +196,6 @@ async function sendToElevenLabs(text, ws, streamSid, onDone, getState, setState)
     const audioBuffer = await response.arrayBuffer();
     const base64Audio = Buffer.from(audioBuffer).toString("base64");
 
-    // Check again after await
     if (getState() !== STATE_SPEAKING) {
       console.log("Interrupted after fetch (Twilio), skipping playback");
       if (onDone) onDone();
@@ -240,7 +254,6 @@ async function sendToElevenLabsWeb(text, ws, onDone, getState, setState) {
       return;
     }
 
-    // Check if interrupted before sending audio
     if (getState() !== STATE_SPEAKING) {
       console.log("Interrupted before audio sent (Web), skipping playback");
       if (onDone) onDone();
@@ -249,7 +262,6 @@ async function sendToElevenLabsWeb(text, ws, onDone, getState, setState) {
 
     const audioBuffer = await response.arrayBuffer();
 
-    // Check again after await
     if (getState() !== STATE_SPEAKING) {
       console.log("Interrupted after fetch (Web), skipping playback");
       if (onDone) onDone();
@@ -354,7 +366,6 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // Session ready - trigger greeting
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
       console.log("Session ready (Twilio), sending response.create");
@@ -364,7 +375,6 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // User started speaking - interrupt Kelly immediately
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Twilio) - interrupting Kelly");
 
@@ -373,7 +383,6 @@ wssTwilio.on("connection", (ws) => {
         thinkingTimeout = null;
       }
 
-      // Clear Twilio audio stream immediately
       if (streamSid && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           event: "clear",
@@ -386,13 +395,11 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // Silence detected - user finished speaking
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Twilio)");
       if (state === STATE_LISTENING) {
         setState(STATE_THINKING);
 
-        // 5 second safety timeout - reset if OpenAI never responds
         thinkingTimeout = setTimeout(() => {
           if (state === STATE_THINKING) {
             console.log("Thinking timeout (Twilio) - resetting to LISTENING");
@@ -404,7 +411,6 @@ wssTwilio.on("connection", (ws) => {
       return;
     }
 
-    // OpenAI finished generating response text
     if (data.type === "response.done" && data.response) {
       if (thinkingTimeout) {
         clearTimeout(thinkingTimeout);
@@ -415,7 +421,6 @@ wssTwilio.on("connection", (ws) => {
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
 
-        // Only speak if we're still in THINKING state (not interrupted)
         if (state !== STATE_THINKING) {
           console.log("State is not THINKING (Twilio), skipping response");
           responseInProgress = false;
@@ -424,7 +429,6 @@ wssTwilio.on("connection", (ws) => {
 
         setState(STATE_SPEAKING);
 
-        // 350ms natural delay before speaking
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) {
             console.log("Interrupted during delay (Twilio), skipping");
@@ -458,7 +462,6 @@ wssTwilio.on("connection", (ws) => {
     }
 
     if (data.event === "media") {
-      // Block audio to OpenAI if Kelly is speaking or thinking
       if (state === STATE_SPEAKING || state === STATE_THINKING) return;
       if (openaiWs.readyState === WebSocket.OPEN) {
         openaiWs.send(JSON.stringify({
@@ -542,7 +545,6 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // Session ready - trigger greeting
     if (data.type === "session.updated" && !sessionReady) {
       sessionReady = true;
       console.log("Session ready (Web), sending response.create");
@@ -552,7 +554,6 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // User started speaking - interrupt Kelly immediately
     if (data.type === "input_audio_buffer.speech_started") {
       console.log("User started speaking (Web) - interrupting Kelly");
 
@@ -566,13 +567,11 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // Silence detected - user finished speaking
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Web)");
       if (state === STATE_LISTENING) {
         setState(STATE_THINKING);
 
-        // 5 second safety timeout
         thinkingTimeout = setTimeout(() => {
           if (state === STATE_THINKING) {
             console.log("Thinking timeout (Web) - resetting to LISTENING");
@@ -584,7 +583,6 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // OpenAI finished generating response text
     if (data.type === "response.done" && data.response) {
       if (thinkingTimeout) {
         clearTimeout(thinkingTimeout);
@@ -595,7 +593,6 @@ wssWeb.on("connection", (ws) => {
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
 
-        // Only speak if still in THINKING state
         if (state !== STATE_THINKING) {
           console.log("State is not THINKING (Web), skipping response");
           responseInProgress = false;
@@ -604,7 +601,6 @@ wssWeb.on("connection", (ws) => {
 
         setState(STATE_SPEAKING);
 
-        // 350ms natural delay before speaking
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) {
             console.log("Interrupted during delay (Web), skipping");
@@ -624,7 +620,6 @@ wssWeb.on("connection", (ws) => {
   });
 
   ws.on("message", async (message) => {
-    // Handle typed data from form (JSON message)
     if (!Buffer.isBuffer(message)) {
       let data;
       try {
@@ -658,7 +653,6 @@ wssWeb.on("connection", (ws) => {
       return;
     }
 
-    // Handle audio from microphone
     if (state === STATE_SPEAKING || state === STATE_THINKING) return;
 
     if (openaiWs.readyState === WebSocket.OPEN) {
