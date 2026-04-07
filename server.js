@@ -181,7 +181,7 @@ async function sendToElevenLabs(text, ws, streamSid, onDone, getState, setState)
 
 async function sendToElevenLabsWeb(text, ws, onDone, getState, setState) {
   console.log("WEB - Sending to Eleven Labs:", text);
-  const voiceId = "ljX1ZrXuDIIRVcmiVSyR";
+  const voiceId = "3sfGn775ryaDXhFWHwBg";
   try {
     const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=mp3_44100_128", {
       method: "POST",
