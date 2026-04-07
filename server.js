@@ -86,48 +86,33 @@ Get both pieces of information before moving to phone collection:
 Only when you understand both, move to phone collection.
 
 PHONE COLLECTION:
-Once you understand their problem completely, ask:
-"Can I please get your phone number in case we get disconnected? You can also type it in the box on your screen if you prefer."
+Once you understand their problem completely, say exactly:
+"Can I get your phone number? Please type it in the box that just appeared on your screen."
+Then wait silently. Do not ask them to say it out loud. Do not try to capture it from voice.
+Once they confirm they typed it, say: "Got it, thank you."
 
-Wait for them to give you a phone number, either by speaking or typing.
-Do not move forward until they provide a number.
+ADDRESS:
+After phone number is confirmed, say exactly:
+"Can you please type your address in the box on your screen as well? I need the street number, street name, city, and postal code."
+Then wait silently. Do not ask them to say it out loud. Do not try to capture it from voice.
+Once they confirm they typed it, say: "Perfect, thank you."
 
-PHONE CONFIRMATION:
-When the customer gives a phone number by voice, repeat it back digit by digit slowly and clearly to confirm.
-If they typed it, you can see it — just confirm: "Got it, so your number is [number], is that correct?"
-Wait for the customer to confirm it is correct before moving on.
-If the customer says no, wrong, or anything indicating the number is incorrect, you must say:
-"I am sorry about that. Can you please give me the number again slowly?"
-Then repeat it back again digit by digit and wait for confirmation again.
-Do NOT move on to the address until the customer confirms the phone number is correct.
-This is critical. Never skip phone number confirmation.
+AFTER ADDRESS:
+Once the address is confirmed, say exactly:
+"The technician will be on the way and will call you shortly."
 
 CORRECTION RULE:
 If the customer says no, that is wrong, you made a mistake, or anything negative about your last response:
 Stop immediately.
 Apologize briefly.
-Ask them to repeat the information.
-Do not continue to the next step until the correction is made and confirmed.
+Ask them to clarify.
+Do not continue to the next step until corrected.
 
 WAITING RULE:
 Always wait for the customer to finish speaking completely before responding.
 Never interrupt.
-Never move to the next question until the current one is fully answered and confirmed.
+Never move to the next question until the current one is fully answered.
 Take your time. Do not rush.
-
-ADDRESS:
-After phone confirmation, ask:
-"Can you please give me the address so I can send a technician? You can also type it in the box on your screen if you prefer."
-
-You must have: street number, street name, city, and postal code.
-If any part is missing, ask only for what is missing.
-If they typed it, repeat it back to confirm before continuing.
-If they spoke it, repeat the address back to confirm before continuing.
-Do not continue without a complete confirmed address.
-
-AFTER ADDRESS:
-Once you have the full confirmed address, say:
-"The technician will be on the way and will call shortly."
 
 LANGUAGE:
 Speak in the same language as the customer.
@@ -326,26 +311,6 @@ wssTwilio.on("connection", (ws) => {
       if (content && content.type === "text" && content.text && streamSid) {
         console.log("AI Response (Twilio):", content.text);
 
-        const phoneRegex = /\d[\d\s.-]*\d/;
-        const phoneMatch = content.text.match(phoneRegex);
-        if (phoneMatch && !callData.phoneNumber) {
-          callData.phoneNumber = phoneMatch[0].trim();
-          console.log("Phone captured:", callData.phoneNumber);
-          await sendTelegram("📞 PHONE CAPTURED (PHONE):\n" + callData.phoneNumber);
-        }
-
-        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way)[\w\s]*)/i;
-        const addressMatch = content.text.match(addressRegex);
-        if (addressMatch && !callData.address) {
-          callData.address = addressMatch[0].trim();
-          console.log("Address captured:", callData.address);
-        }
-
-        if (callData.phoneNumber && callData.address && !callData.leadSent) {
-          callData.leadSent = true;
-          await sendTelegram("🚨 COMPLETE LEAD (PHONE):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
-        }
-
         kellySpeaking = true;
         await sendToElevenLabs(content.text, ws, streamSid, () => {
           kellySpeaking = false;
@@ -455,26 +420,6 @@ wssWeb.on("connection", (ws) => {
       if (content && content.type === "text" && content.text) {
         console.log("AI Response (Web):", content.text);
 
-        const phoneRegex = /\d[\d\s.-]*\d/;
-        const phoneMatch = content.text.match(phoneRegex);
-        if (phoneMatch && !callData.phoneNumber) {
-          callData.phoneNumber = phoneMatch[0].trim();
-          console.log("Phone captured:", callData.phoneNumber);
-          await sendTelegram("📞 PHONE CAPTURED (WEB):\n" + callData.phoneNumber);
-        }
-
-        const addressRegex = /(\d+\s+[\w\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|court|ct|boulevard|blvd|circle|cir|park|place|pl|way)[\w\s]*)/i;
-        const addressMatch = content.text.match(addressRegex);
-        if (addressMatch && !callData.address) {
-          callData.address = addressMatch[0].trim();
-          console.log("Address captured:", callData.address);
-        }
-
-        if (callData.phoneNumber && callData.address && !callData.leadSent) {
-          callData.leadSent = true;
-          await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
-        }
-
         kellySpeaking = true;
         await sendToElevenLabsWeb(content.text, ws, () => {
           kellySpeaking = false;
@@ -485,7 +430,8 @@ wssWeb.on("connection", (ws) => {
   });
 
   ws.on("message", async (message) => {
-    if (kellySpeaking && !(message instanceof Buffer)) {
+    // Handle typed data from form (JSON message)
+    if (!Buffer.isBuffer(message)) {
       let data;
       try {
         data = JSON.parse(message.toString());
@@ -493,40 +439,40 @@ wssWeb.on("connection", (ws) => {
         return;
       }
 
-      // STEP 2: Handle typed data from form
       if (data.type === "typed_data") {
         console.log("Typed data received:", data);
-        
+
         if (data.phoneNumber && !callData.phoneNumber) {
           callData.phoneNumber = data.phoneNumber.trim();
           console.log("Phone typed:", callData.phoneNumber);
           await sendTelegram("📞 PHONE TYPED (WEB):\n" + callData.phoneNumber);
         }
-        
+
         if (data.address && !callData.address) {
           callData.address = data.address.trim();
           console.log("Address typed:", callData.address);
+          await sendTelegram("📍 ADDRESS TYPED (WEB):\n" + callData.address);
         }
-        
+
         if (callData.phoneNumber && callData.address && !callData.leadSent) {
           callData.leadSent = true;
           await sendTelegram("🚨 COMPLETE LEAD (WEB):\n\n📞 " + callData.phoneNumber + "\n📍 " + callData.address);
         }
-        
+
         return;
       }
+      return;
     }
 
+    // Handle audio from microphone
     if (kellySpeaking) return;
 
     if (openaiWs.readyState === WebSocket.OPEN) {
-      if (Buffer.isBuffer(message)) {
-        const base64Audio = message.toString("base64");
-        openaiWs.send(JSON.stringify({
-          type: "input_audio_buffer.append",
-          audio: base64Audio,
-        }));
-      }
+      const base64Audio = message.toString("base64");
+      openaiWs.send(JSON.stringify({
+        type: "input_audio_buffer.append",
+        audio: base64Audio,
+      }));
     }
   });
 
