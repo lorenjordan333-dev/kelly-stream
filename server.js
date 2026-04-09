@@ -1,19 +1,9 @@
 const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
-const twilio = require("twilio");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "5382867739";
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_NUMBER = process.env.TWILIO_NUMBER || "+14388071579";
-const MONITOR_NUMBER = "+14388071579"; // Your number to receive monitoring calls
-
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-
-// Track active calls: callSid -> { conferenceName, kellyMuted }
-const activeCalls = {};
 
 async function sendTelegram(message) {
   try {
@@ -49,87 +39,12 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get("/voice", (req, res) => { res.send("OK"); });
 
-// Main voice endpoint - called when customer calls
 app.post("/voice", (req, res) => {
   console.log("VOICE HIT");
-  const callSid = req.body.CallSid;
-  const callerNumber = req.body.From;
   const host = req.headers["x-forwarded-host"] || req.headers.host || "kelly-stream-production.up.railway.app";
-
-  console.log("Incoming call from:", callerNumber, "CallSid:", callSid);
-
-  // Send Telegram notification
-  sendTelegram(`📞 INCOMING CALL\n\nFrom: ${callerNumber}\nCallSid: ${callSid}`);
-
-  // Connect to Kelly via stream
   const twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Connect><Stream url="wss://' + host + '/stream" /></Connect></Response>';
   res.set("Content-Type", "text/xml");
   res.status(200).send(twiml);
-
-  // Dial monitor number silently after a short delay
-  setTimeout(async () => {
-    try {
-      await twilioClient.calls.create({
-        to: MONITOR_NUMBER,
-        from: TWILIO_NUMBER,
-        url: `https://${host}/monitor-join`,
-        statusCallback: `https://${host}/monitor-status`,
-      });
-      console.log("Monitor call initiated to:", MONITOR_NUMBER);
-    } catch (err) {
-      console.error("Failed to dial monitor:", err.message);
-    }
-  }, 3000); // 3 second delay so Kelly picks up first
-});
-
-// What the monitor hears when they pick up
-app.post("/monitor-join", (req, res) => {
-  console.log("Monitor joined");
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Monitoring active. Press star 1 to take over the call.</Say>
-  <Gather numDigits="2" action="/monitor-action" timeout="3600">
-    <Pause length="3600"/>
-  </Gather>
-</Response>`;
-  res.set("Content-Type", "text/xml");
-  res.send(twiml);
-});
-
-// Handle monitor pressing *1 to take over
-app.post("/monitor-action", (req, res) => {
-  const digits = req.body.Digits;
-  console.log("Monitor pressed:", digits);
-
-  if (digits === "*1") {
-    console.log("TAKEOVER initiated");
-    sendTelegram("🔴 TAKEOVER: You are now handling the call");
-
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say>Taking over now.</Say>
-  <Dial>
-    <Conference beep="false" startConferenceOnEnter="true" endConferenceOnExit="true">kelly-takeover</Conference>
-  </Dial>
-</Response>`;
-    res.set("Content-Type", "text/xml");
-    res.send(twiml);
-  } else {
-    // Keep listening
-    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather numDigits="2" action="/monitor-action" timeout="3600">
-    <Pause length="3600"/>
-  </Gather>
-</Response>`;
-    res.set("Content-Type", "text/xml");
-    res.send(twiml);
-  }
-});
-
-app.post("/monitor-status", (req, res) => {
-  console.log("Monitor status:", req.body.CallStatus);
-  res.sendStatus(200);
 });
 
 app.post("/voice-test", (req, res) => { console.log("voice-test hit"); res.send("ok"); });
@@ -319,7 +234,7 @@ wssTwilio.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
-  let greetingDone = false;
+  let greetingDone = false; // KEY: tracks if greeting finished and customer spoke at least once
   let customerSpokeOnce = false;
   const getState = () => state;
   const setState = (newState) => { console.log("State change (Twilio):", state, "->", newState); state = newState; };
@@ -374,6 +289,7 @@ wssTwilio.on("connection", (ws) => {
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Twilio)");
       if (state === STATE_LISTENING) {
+        // Only respond if greeting is done
         if (!greetingDone) {
           console.log("Greeting not done yet (Twilio), ignoring customer speech");
           return;
@@ -398,6 +314,8 @@ wssTwilio.on("connection", (ws) => {
         console.log("AI Response (Twilio):", content.text);
         if (state !== STATE_THINKING) { console.log("State is not THINKING (Twilio), skipping"); responseInProgress = false; return; }
         setState(STATE_SPEAKING);
+
+        // Mark greeting as done after first response plays
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) { responseInProgress = false; return; }
           await sendToElevenLabs(content.text, ws, streamSid, () => {
@@ -451,7 +369,7 @@ wssWeb.on("connection", (ws) => {
   let sessionReady = false;
   let responseInProgress = false;
   let thinkingTimeout = null;
-  let greetingDone = false;
+  let greetingDone = false; // KEY: tracks if greeting finished and customer spoke at least once
   let customerSpokeOnce = false;
   const getState = () => state;
   const setState = (newState) => { console.log("State change (Web):", state, "->", newState); state = newState; };
@@ -503,6 +421,7 @@ wssWeb.on("connection", (ws) => {
     if (data.type === "input_audio_buffer.speech_stopped") {
       console.log("User stopped speaking (Web)");
       if (state === STATE_LISTENING) {
+        // Only respond if greeting is done
         if (!greetingDone) {
           console.log("Greeting not done yet (Web), ignoring customer speech");
           return;
@@ -527,6 +446,7 @@ wssWeb.on("connection", (ws) => {
         console.log("AI Response (Web):", content.text);
         if (state !== STATE_THINKING) { console.log("State is not THINKING (Web), skipping"); responseInProgress = false; return; }
         setState(STATE_SPEAKING);
+
         setTimeout(async () => {
           if (state !== STATE_SPEAKING) { responseInProgress = false; return; }
           await sendToElevenLabsWeb(content.text, ws, () => {
